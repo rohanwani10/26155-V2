@@ -1,0 +1,45 @@
+:root {
+  color-scheme: light dark;
+  font: 16px/1.5 system-ui, "Segoe UI", Roboto, sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+#root {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 360px;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 16px 0;
+}
+
+th,
+td {
+  border: 1px solid #8884;
+  padding: 6px 8px;
+  text-align: left;
+  font-size: 0.9em;
+}
+
+[role="alert"] {
+  color: #c0392b;
+}
