@@ -163,3 +163,58 @@ def test_pdf_report_for_cisco_device_is_unaffected(authed_client):
     assert b"Serial Number:" in text
     assert b"OS Version:" in text
     assert b"Resource ID:" not in text
+
+
+def test_malformed_config_that_still_matches_detection_is_a_clean_400(authed_client):
+    # Regression: detect_vendor() matches on the presence of the substrings
+    # '"IpPermissions"' and '"GroupId"' in the raw text, which a truncated
+    # JSON body can still satisfy -- parse_aws_security_group_facts() must
+    # not be allowed to raise an uncaught JSONDecodeError past this point.
+    resp = authed_client.post(
+        "/api/devices",
+        files={
+            "config": (
+                "security-group.json",
+                b'{"GroupId": "sg-123", "IpPermissions": [',  # truncated JSON
+                "application/json",
+            ),
+            "version_info": (
+                "identity.json",
+                (FIXTURES / "identity_metadata.json").read_bytes(),
+                "application/json",
+            ),
+        },
+    )
+    assert resp.status_code == 400
+
+
+def test_malformed_config_in_bulk_upload_does_not_take_down_the_batch(authed_client):
+    files = [
+        (
+            "configs",
+            ("bad.json", b'{"GroupId": "sg-123", "IpPermissions": [', "application/json"),
+        ),
+        (
+            "configs",
+            (
+                "good.json",
+                (FIXTURES / "hardened_security_group.json").read_bytes(),
+                "application/json",
+            ),
+        ),
+        (
+            "version_infos",
+            ("v1.json", (FIXTURES / "identity_metadata.json").read_bytes(), "application/json"),
+        ),
+        (
+            "version_infos",
+            ("v2.json", (FIXTURES / "identity_metadata.json").read_bytes(), "application/json"),
+        ),
+    ]
+    resp = authed_client.post("/api/devices/bulk", files=files)
+    assert resp.status_code == 200
+    results = resp.json()["results"]
+    assert len(results) == 2
+    assert "error" in results[0]
+    assert "device_id" not in results[0]
+    assert "device_id" in results[1]

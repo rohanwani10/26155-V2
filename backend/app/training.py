@@ -34,10 +34,20 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from .facts import CiscoIosFacts
+from .rules import CIS_CONTROLS
 
 # The "existing taxonomy... used by the fact model" a queued line gets mapped
 # into -- the real ~33 fact_ids, not something the admin can freely invent.
 FACT_IDS = frozenset(f.name for f in dataclasses.fields(CiscoIosFacts))
+
+# Fail-safe default per fact: an unproven fact must default to whichever
+# value FAILS that fact's control, never to whichever value happens to be
+# `False`. Facts where the insecure state is `True` (e.g. telnet_enabled)
+# would otherwise default to a silent, unproven "pass" the moment a
+# trained-vendor line hasn't been mapped yet -- the opposite of fail-safe.
+_FAIL_SAFE_DEFAULTS: dict[str, bool] = {
+    control.fact_id: not control.passes_when for control in CIS_CONTROLS
+}
 
 
 def _entry_id(vendor: str, line: str) -> str:
@@ -162,16 +172,17 @@ def build_trained_facts(
     redacted_config: str, rules: list[dict[str, Any]]
 ) -> tuple[CiscoIosFacts, list[str]]:
     """The core matching mechanism for a vendor with no fixed parser. Every
-    fact starts False -- the same fail-safe-when-unproven convention
-    parse_cisco_ios_facts already uses -- and only flips when a confirmed
-    rule's line matches exactly (after stripping); every fact naturally still
-    evaluates correctly through evaluate_all/evaluate_iso's passes_when logic,
-    so there's no "not applicable" case to invent. Blank lines and comment
-    lines (`!` or `#`) are skipped before matching -- never queued, never
-    matched. Everything else that doesn't match a rule is returned as
-    "unrecognized" for the caller to queue."""
+    fact starts at its fail-safe default (whichever value FAILS that fact's
+    control -- see _FAIL_SAFE_DEFAULTS) -- the same fail-safe-when-unproven
+    convention parse_cisco_ios_facts already uses -- and only flips when a
+    confirmed rule's line matches exactly (after stripping); every fact
+    naturally still evaluates correctly through evaluate_all/evaluate_iso's
+    passes_when logic, so there's no "not applicable" case to invent. Blank
+    lines and comment lines (`!` or `#`) are skipped before matching -- never
+    queued, never matched. Everything else that doesn't match a rule is
+    returned as "unrecognized" for the caller to queue."""
     rule_by_line = {rule["line"]: rule for rule in rules}
-    fact_values: dict[str, bool] = dict.fromkeys(FACT_IDS, False)
+    fact_values: dict[str, bool] = dict(_FAIL_SAFE_DEFAULTS)
     unrecognized: list[str] = []
     for raw_line in redacted_config.splitlines():
         line = raw_line.strip()
@@ -203,6 +214,11 @@ def build_training_router(
     def get_training_queue(
         vendor: str, data_key: bytes = Depends(require_session)
     ) -> dict[str, Any]:
+        # Must match devices.py's `(vendor_hint or "").strip() or "unknown"`
+        # normalization exactly -- otherwise a vendor value that differs only
+        # by incidental whitespace looks up a different storage key than the
+        # one uploads actually queue/rule against.
+        vendor = vendor.strip() or "unknown"
         lines = queue_store.list_for_vendor(vendor, decrypt=Fernet(data_key).decrypt)
         return {"vendor": vendor, "lines": lines}
 
@@ -214,11 +230,12 @@ def build_training_router(
             raise HTTPException(
                 status_code=400, detail=f"Unknown fact_id: {body.fact_id}"
             )
+        vendor = body.vendor.strip() or "unknown"
         line = body.line.strip()
         rule_store.add(
-            body.vendor, line, body.fact_id, body.value, encrypt=Fernet(data_key).encrypt
+            vendor, line, body.fact_id, body.value, encrypt=Fernet(data_key).encrypt
         )
-        queue_store.remove(body.vendor, line)
+        queue_store.remove(vendor, line)
         return {"ok": True}
 
     return router

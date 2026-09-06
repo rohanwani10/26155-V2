@@ -11,10 +11,12 @@ facts/findings are already redacted upstream at ingestion (see redaction.py)
 -- so chunks built from them structurally can't carry raw secret values.
 """
 
+import threading
 from pathlib import Path
 from typing import Any
 
 import chromadb
+from chromadb.errors import DuplicateIDError
 
 from .llm import LlmClient
 
@@ -91,6 +93,12 @@ class DeviceVectorStore:
     def __init__(self, data_dir: Path, llm_client: LlmClient) -> None:
         self._client = chromadb.PersistentClient(path=str(data_dir / "vectorstore"))
         self._llm = llm_client
+        # The count()==0 "not yet indexed" check below isn't atomic with the
+        # add() that follows it -- two concurrent first-chat requests for the
+        # same never-yet-indexed device could otherwise both pass the check
+        # and both insert the same chunk ids. One process-wide lock (same
+        # reasoning as ChatHistoryStore's append lock) closes that window.
+        self._index_lock = threading.Lock()
 
     def _collection(self, device_id: str) -> Any:
         # Chroma collection names must start/end alphanumeric; prefixing a
@@ -101,19 +109,26 @@ class DeviceVectorStore:
     def ensure_indexed(self, device_id: str, record: dict[str, Any]) -> None:
         """Lazy indexing: a no-op once the device's collection already has
         entries, so this is safe to call on every chat request."""
-        collection = self._collection(device_id)
-        if collection.count() > 0:
-            return
-        chunks = _build_chunks(record)
-        if not chunks:
-            return
-        embeddings = [self._llm.embed(chunk["text"]) for chunk in chunks]
-        collection.add(
-            ids=[chunk["id"] for chunk in chunks],
-            documents=[chunk["text"] for chunk in chunks],
-            metadatas=[chunk["metadata"] for chunk in chunks],
-            embeddings=embeddings,
-        )
+        with self._index_lock:
+            collection = self._collection(device_id)
+            if collection.count() > 0:
+                return
+            chunks = _build_chunks(record)
+            if not chunks:
+                return
+            embeddings = [self._llm.embed(chunk["text"]) for chunk in chunks]
+            try:
+                collection.add(
+                    ids=[chunk["id"] for chunk in chunks],
+                    documents=[chunk["text"] for chunk in chunks],
+                    metadatas=[chunk["metadata"] for chunk in chunks],
+                    embeddings=embeddings,
+                )
+            except DuplicateIDError:
+                # Another process (or a call that raced ahead of the lock in
+                # a future multi-process deployment) already indexed this
+                # device -- same end state as the count()>0 early return.
+                pass
 
     def query(self, device_id: str, question: str, k: int = 4) -> list[dict[str, Any]]:
         collection = self._collection(device_id)

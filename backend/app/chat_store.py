@@ -8,6 +8,7 @@ growing list per device, not one independent record per save.
 
 import json
 import sqlite3
+import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -25,6 +26,13 @@ class ChatHistoryStore:
         self._db_path = db_path
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
+        # FastAPI runs sync handlers in a threadpool, so two concurrent chat
+        # requests for the same device can otherwise both read the same prior
+        # history before either writes back, and the second write silently
+        # drops the first exchange. One process-wide lock around the
+        # read-modify-write is enough for this single-local-admin app -- no
+        # per-device lock table needed for this traffic level.
+        self._append_lock = threading.Lock()
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
@@ -69,15 +77,16 @@ class ChatHistoryStore:
         encrypt: Callable[[bytes], bytes],
         decrypt: Callable[[bytes], bytes],
     ) -> None:
-        history = self.get_all(device_id, decrypt)
-        history.append(exchange)
-        payload = encrypt(json.dumps(history).encode("utf-8"))
-        with self._connection() as conn:
-            conn.execute(
-                """
-                INSERT INTO chat_history (device_id, encrypted_payload)
-                VALUES (?, ?)
-                ON CONFLICT(device_id) DO UPDATE SET encrypted_payload = excluded.encrypted_payload
-                """,
-                (device_id, payload),
-            )
+        with self._append_lock:
+            history = self.get_all(device_id, decrypt)
+            history.append(exchange)
+            payload = encrypt(json.dumps(history).encode("utf-8"))
+            with self._connection() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO chat_history (device_id, encrypted_payload)
+                    VALUES (?, ?)
+                    ON CONFLICT(device_id) DO UPDATE SET encrypted_payload = excluded.encrypted_payload
+                    """,
+                    (device_id, payload),
+                )

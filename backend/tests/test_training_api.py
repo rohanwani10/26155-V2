@@ -189,3 +189,51 @@ def test_falls_back_to_unknown_vendor_label_with_no_hint(authed_client):
 
     queue_resp = authed_client.get("/api/training/queue", params={"vendor": "unknown"})
     assert "secure-mode strict" in queue_resp.json()["lines"]
+
+
+def test_vendor_hint_colliding_with_a_registered_vendor_name_is_rejected(authed_client):
+    # detect_vendor() already had its chance to recognize this upload as
+    # cisco_ios and didn't -- trusting a caller-supplied hint of the same
+    # name would store the device as if the real deterministic parser ran.
+    resp = _upload_unknown_vendor(authed_client, UNKNOWN_CONFIG, vendor_hint="cisco_ios")
+    assert resp.status_code == 400
+
+
+def test_confirming_a_mapping_with_incidental_whitespace_still_matches_the_queue(
+    authed_client,
+):
+    # Regression: devices.py always strips vendor_hint before using it as a
+    # storage key; the training endpoints must normalize the same way, or a
+    # confirmed mapping silently never matches the line uploads queued.
+    _upload_unknown_vendor(authed_client, UNKNOWN_CONFIG, vendor_hint="  acme_widgetos  ")
+
+    mapping_resp = authed_client.post(
+        "/api/training/mappings",
+        json={
+            "vendor": "  acme_widgetos  ",
+            "line": "secure-mode strict",
+            "fact_id": "aaa_new_model",
+            "value": True,
+        },
+    )
+    assert mapping_resp.status_code == 200
+
+    queue_resp = authed_client.get(
+        "/api/training/queue", params={"vendor": "acme_widgetos"}
+    )
+    assert "secure-mode strict" not in queue_resp.json()["lines"]
+
+    findings = _upload_unknown_vendor(
+        authed_client, UNKNOWN_CONFIG, vendor_hint="acme_widgetos"
+    ).json()["findings"]["CIS"]
+    aaa_finding = next(f for f in findings if f["control_id"] == "CIS-3.1")
+    assert aaa_finding["status"] == "pass"
+
+
+def test_unmapped_line_fails_safe_rather_than_defaulting_to_pass(authed_client):
+    # Regression: every unproven fact must default to whichever value FAILS
+    # its control -- not blanket False -- so an unmapped insecure-by-default
+    # setting (e.g. Telnet) never silently reads as compliant.
+    resp = _upload_unknown_vendor(authed_client, UNKNOWN_CONFIG, vendor_hint="acme_widgetos")
+    findings = {f["control_id"]: f for f in resp.json()["findings"]["CIS"]}
+    assert findings["CIS-4.2"]["status"] == "fail"  # telnet_enabled: passes_when=False

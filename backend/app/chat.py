@@ -21,7 +21,7 @@ from cryptography.fernet import Fernet
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from .chat_store import ChatHistoryStore
+from .chat_store import ChatHistoryCorrupted, ChatHistoryStore
 from .llm import LlmClient
 from .storage import DeviceRecordCorrupted, DeviceStore
 from .vectorstore import DeviceVectorStore
@@ -63,6 +63,14 @@ def build_chat_router(
             raise HTTPException(status_code=404, detail="Device not found")
         return record
 
+    def _get_history(device_id: str, data_key: bytes) -> list[dict[str, Any]]:
+        try:
+            return history_store.get_all(device_id, decrypt=Fernet(data_key).decrypt)
+        except ChatHistoryCorrupted:
+            raise HTTPException(
+                status_code=500, detail="Chat history is corrupted or unreadable"
+            )
+
     @router.post("/api/devices/{device_id}/chat")
     def chat(
         device_id: str,
@@ -96,9 +104,14 @@ def build_chat_router(
             "answer": answer,
             "citations": citations,
         }
-        history_store.append(
-            device_id, exchange, encrypt=fernet.encrypt, decrypt=fernet.decrypt
-        )
+        try:
+            history_store.append(
+                device_id, exchange, encrypt=fernet.encrypt, decrypt=fernet.decrypt
+            )
+        except ChatHistoryCorrupted:
+            raise HTTPException(
+                status_code=500, detail="Chat history is corrupted or unreadable"
+            )
         return exchange
 
     @router.get("/api/devices/{device_id}/chat")
@@ -106,7 +119,6 @@ def build_chat_router(
         device_id: str, data_key: bytes = Depends(require_session)
     ) -> dict[str, Any]:
         _load_device(device_id, data_key)  # 404s on a nonexistent device
-        history = history_store.get_all(device_id, decrypt=Fernet(data_key).decrypt)
-        return {"history": history}
+        return {"history": _get_history(device_id, data_key)}
 
     return router

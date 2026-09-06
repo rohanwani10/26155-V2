@@ -142,11 +142,13 @@ def test_upload_from_unrecognized_vendor_succeeds_and_queues_lines(authed_client
     body = resp.json()
     findings = {f["control_id"]: f for f in body["findings"]["CIS"]}
     assert len(findings) == len(CIS_CONTROLS)
-    # Every fact starts False with zero confirmed rules for this vendor, so a
-    # control that requires the fact to be True (e.g. SSH v2) fails, while
-    # one that requires it False (e.g. Telnet disabled) reads as compliant.
-    assert findings["CIS-4.1"]["status"] == "fail"  # ssh_version_2 defaults False
-    assert findings["CIS-4.2"]["status"] == "pass"  # telnet_enabled defaults False
+    # Every unproven fact defaults to whichever value FAILS its control, not
+    # to False -- an unmapped line must never read as a silent, unproven
+    # "pass". So every control fails with zero confirmed rules for this
+    # vendor, regardless of whether the underlying fact's passes_when is
+    # True (e.g. SSH v2) or False (e.g. Telnet disabled).
+    assert findings["CIS-4.1"]["status"] == "fail"  # ssh_version_2 unproven -> fail-safe
+    assert findings["CIS-4.2"]["status"] == "fail"  # telnet_enabled unproven -> fail-safe
 
     queue_resp = authed_client.get(
         "/api/training/queue", params={"vendor": "acme_widgetos"}

@@ -13,7 +13,7 @@ from .redaction import redact_config
 from .report import generate_pdf_report
 from .storage import DeviceRecordCorrupted, DeviceStore
 from .training import TrainingQueueStore, TrainingRuleStore, build_trained_facts
-from .vendors import detect_vendor
+from .vendors import detect_vendor, registered_vendor_names
 from .version_info import DeviceIdentity
 
 
@@ -46,8 +46,19 @@ def _process_device_upload(
 
     if profile is not None:
         vendor_name = profile.name
-        facts: Any = profile.parse_facts(redacted_config)
-        identity = profile.parse_identity(raw_version)
+        try:
+            facts: Any = profile.parse_facts(redacted_config)
+            identity = profile.parse_identity(raw_version)
+        except ValueError as exc:
+            # A vendor's detect() can match on a superficial signature (e.g.
+            # AWS Security Groups matches on a couple of substrings in the
+            # raw text) while the body is still malformed for that vendor's
+            # actual parser (e.g. truncated JSON) -- caught once here, for
+            # every vendor, rather than duplicated per parser module, so one
+            # bad file degrades to a normal per-device DeviceUploadError
+            # instead of an uncaught 500 that also takes down the rest of a
+            # bulk batch.
+            raise DeviceUploadError(f"Malformed {vendor_name} config: {exc}")
         remediation_overrides = profile.remediation_overrides
     else:
         # Unrecognized vendor (see training.py): no fixed parser exists, so
@@ -57,6 +68,18 @@ def _process_device_upload(
         # rule are queued for the admin to map later. Same evaluate_all/
         # evaluate_iso machinery from here on, no separate code path.
         vendor_name = (vendor_hint or "").strip() or "unknown"
+        if vendor_name in registered_vendor_names():
+            # vendor_hint is caller-supplied and reaches evaluation unchecked
+            # -- a hint that collides with a real built-in vendor name would
+            # otherwise store this device as if it went through that vendor's
+            # real deterministic parser, when it actually went through the
+            # generic fail-safe-default trained-facts path. detect_vendor()
+            # already had its chance to recognize this upload as that vendor
+            # and didn't, so the hint is rejected rather than trusted.
+            raise DeviceUploadError(
+                f"vendor_hint '{vendor_name}' is a reserved built-in vendor name "
+                "and cannot be used as a training hint"
+            )
         rules = rule_store.list_for_vendor(vendor_name, decrypt=Fernet(data_key).decrypt)
         facts, unrecognized_lines = build_trained_facts(redacted_config, rules)
         for line in unrecognized_lines:
