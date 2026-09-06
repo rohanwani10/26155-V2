@@ -11,6 +11,7 @@ export function UploadScreen({
 }) {
   const [config, setConfig] = useState<File | null>(null);
   const [versionInfo, setVersionInfo] = useState<File | null>(null);
+  const [vendorHint, setVendorHint] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -23,7 +24,9 @@ export function UploadScreen({
     setError(null);
     setSubmitting(true);
     try {
-      const result = await uploadDevice(config, versionInfo);
+      const result = vendorHint.trim()
+        ? await uploadDevice(config, versionInfo, vendorHint.trim())
+        : await uploadDevice(config, versionInfo);
       onUploaded(result);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -52,6 +55,16 @@ export function UploadScreen({
           <input
             type="file"
             onChange={(e) => setVersionInfo(e.target.files?.[0] ?? null)}
+          />
+        </label>
+        <label>
+          Vendor hint (optional -- only needed if this vendor isn't
+          recognized automatically)
+          <input
+            type="text"
+            value={vendorHint}
+            onChange={(e) => setVendorHint(e.target.value)}
+            placeholder="e.g. acme_widgetos"
           />
         </label>
         {error && <p role="alert">{error}</p>}

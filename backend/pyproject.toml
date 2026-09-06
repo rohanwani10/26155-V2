@@ -13,3 +13,17 @@ markers = [
     "llm_smoke: exercises a real local Ollama instance; excluded from the default run.",
 ]
 addopts = "-m \"not llm_smoke\""
+
+[dependency-groups]
+dev = [
+    "chromadb>=1.5.9",
+    "cryptography>=50.0.1",
+    "fastapi>=0.141.1",
+    "httpx>=0.28.1",
+    "mypy>=2.3.1",
+    "pytest>=9.1.1",
+    "python-multipart>=0.0.32",
+    "reportlab>=5.0.1",
+    "types-reportlab>=4.5.1.20260827",
+    "uvicorn[standard]>=0.52.4",
+]

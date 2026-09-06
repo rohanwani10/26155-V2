@@ -8,10 +8,12 @@ export function ResultsScreen({
   result,
   onUploadAnother,
   onAuthExpired,
+  onChat,
 }: {
   result: UploadResult;
   onUploadAnother: () => void;
   onAuthExpired: () => void;
+  onChat?: (deviceId: string) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   // CIS/NIST/DISA STIG are always real, evaluated options (never
@@ -46,9 +48,24 @@ export function ResultsScreen({
       <h1>Compliance results</h1>
       <section>
         <h2>Device</h2>
-        <p>Model: {result.identity.model ?? "Unknown"}</p>
-        <p>Serial number: {result.identity.serial_number ?? "Unknown"}</p>
-        <p>OS version: {result.identity.os_version ?? "Unknown"}</p>
+        {/* Cloud-native targets (e.g. AWS Security Groups) have no
+            model/serial/OS version -- resource_id/account/region substitute
+            for them instead, matching report.py's PDF identity section. */}
+        {result.identity.resource_id ||
+        result.identity.account ||
+        result.identity.region ? (
+          <>
+            <p>Resource ID: {result.identity.resource_id ?? "Unknown"}</p>
+            <p>Account: {result.identity.account ?? "Unknown"}</p>
+            <p>Region: {result.identity.region ?? "Unknown"}</p>
+          </>
+        ) : (
+          <>
+            <p>Model: {result.identity.model ?? "Unknown"}</p>
+            <p>Serial number: {result.identity.serial_number ?? "Unknown"}</p>
+            <p>OS version: {result.identity.os_version ?? "Unknown"}</p>
+          </>
+        )}
       </section>
 
       <label htmlFor="framework-select">Framework</label>
@@ -131,6 +148,11 @@ export function ResultsScreen({
 
       {error && <p role="alert">{error}</p>}
       <button onClick={handleDownload}>Download PDF report</button>
+      {onChat && (
+        <button onClick={() => onChat(result.device_id)}>
+          Ask questions about this device
+        </button>
+      )}
       <button onClick={onUploadAnother}>Upload another device</button>
     </div>
   );

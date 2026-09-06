@@ -13,6 +13,14 @@ body {
   padding: 24px;
 }
 
+nav {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #8884;
+}
+
 form {
   display: flex;
   flex-direction: column;
