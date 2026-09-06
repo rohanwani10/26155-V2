@@ -43,13 +43,23 @@ def generate_pdf_report(
         return escape(value) if value else "Unknown"
 
     elements.append(Paragraph("Device Identification", styles["Heading2"]))
-    elements.append(Paragraph(f"Model: {_safe(identity.model)}", styles["Normal"]))
-    elements.append(
-        Paragraph(f"Serial Number: {_safe(identity.serial_number)}", styles["Normal"])
-    )
-    elements.append(
-        Paragraph(f"OS Version: {_safe(identity.os_version)}", styles["Normal"])
-    )
+    # Cloud-native targets (e.g. AWS Security Groups) have no model/serial/OS
+    # version -- when the identity carries cloud-native fields instead, show
+    # those rather than three "Unknown" lines for fields that never applied.
+    if identity.resource_id or identity.account or identity.region:
+        elements.append(
+            Paragraph(f"Resource ID: {_safe(identity.resource_id)}", styles["Normal"])
+        )
+        elements.append(Paragraph(f"Account: {_safe(identity.account)}", styles["Normal"]))
+        elements.append(Paragraph(f"Region: {_safe(identity.region)}", styles["Normal"]))
+    else:
+        elements.append(Paragraph(f"Model: {_safe(identity.model)}", styles["Normal"]))
+        elements.append(
+            Paragraph(f"Serial Number: {_safe(identity.serial_number)}", styles["Normal"])
+        )
+        elements.append(
+            Paragraph(f"OS Version: {_safe(identity.os_version)}", styles["Normal"])
+        )
     elements.append(Spacer(1, 12))
 
     # Title and remediation text can run well past the column width now that

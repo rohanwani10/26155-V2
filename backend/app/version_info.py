@@ -9,6 +9,13 @@ class DeviceIdentity:
     model: str | None
     serial_number: str | None
     os_version: str | None
+    # Cloud-native identifiers (e.g. AWS Security Groups): optional, and
+    # default to None so existing physical-device construction sites
+    # (positional or keyword, model/serial_number/os_version only) are
+    # unaffected.
+    resource_id: str | None = None
+    account: str | None = None
+    region: str | None = None
 
 
 def parse_cisco_ios_version(text: str) -> DeviceIdentity:

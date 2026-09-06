@@ -14,6 +14,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .facts import parse_cisco_ios_facts
+from .vendor_aws_security_groups import (
+    parse_aws_security_group_facts,
+    parse_aws_security_group_identity,
+)
 from .version_info import DeviceIdentity, parse_cisco_ios_version
 
 
@@ -65,5 +69,57 @@ register_vendor(
         detect=_detect_cisco_ios,
         parse_facts=parse_cisco_ios_facts,
         parse_identity=parse_cisco_ios_version,
+    )
+)
+
+
+def _detect_aws_security_groups(raw_config: str, raw_version: str) -> bool:
+    # The config upload is a describe-security-groups-shaped JSON dump: the
+    # combination of "IpPermissions" (the rule list) and "GroupId" (the
+    # resource identifier) reliably identifies it without ever matching
+    # Cisco IOS text or arbitrary config.
+    return '"IpPermissions"' in raw_config and '"GroupId"' in raw_config
+
+
+register_vendor(
+    VendorProfile(
+        name="aws_security_groups",
+        detect=_detect_aws_security_groups,
+        parse_facts=parse_aws_security_group_facts,
+        parse_identity=parse_aws_security_group_identity,
+        remediation_overrides={
+            "telnet_enabled": (
+                "aws ec2 revoke-security-group-ingress --group-id <sg-id> "
+                "--protocol tcp --port 23 --cidr 0.0.0.0/0"
+            ),
+            "ssh_version_2": (
+                "aws ec2 revoke-security-group-ingress --group-id <sg-id> "
+                "--protocol tcp --port 22 --cidr 0.0.0.0/0; then "
+                "aws ec2 authorize-security-group-ingress --group-id <sg-id> "
+                "--protocol tcp --port 22 --cidr <management-cidr>/32"
+            ),
+            "http_server_enabled": (
+                "aws ec2 revoke-security-group-ingress --group-id <sg-id> "
+                "--protocol tcp --port 80 --cidr 0.0.0.0/0"
+            ),
+            "logging_host_configured": (
+                "aws ec2 create-flow-logs --resource-type VPC --resource-ids "
+                "<vpc-id> --traffic-type ALL --log-destination-type "
+                "cloud-watch-logs --log-group-name <log-group> "
+                "(or: resource \"aws_flow_log\" \"this\" { traffic_type = "
+                '"ALL" } in Terraform)'
+            ),
+            "logging_trap_configured": (
+                "aws ec2 create-flow-logs --resource-type VPC --resource-ids "
+                "<vpc-id> --traffic-type ALL --log-destination-type "
+                "cloud-watch-logs --log-group-name <log-group>"
+            ),
+            "vty_access_class_configured": (
+                "aws ec2 revoke-security-group-ingress --group-id <sg-id> "
+                "--protocol tcp --port <22|23|3389> --cidr 0.0.0.0/0; then "
+                "aws ec2 authorize-security-group-ingress --group-id <sg-id> "
+                "--protocol tcp --port <22|23|3389> --cidr <management-cidr>/32"
+            ),
+        },
     )
 )
