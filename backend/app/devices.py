@@ -1,4 +1,4 @@
-"""Upload -> parse -> evaluate -> report, for a single Cisco IOS device."""
+"""Upload -> parse -> evaluate -> report, for one or many Cisco IOS devices."""
 
 import dataclasses
 from collections.abc import Callable
@@ -14,6 +14,45 @@ from .redaction import redact_config
 from .report import generate_pdf_report
 from .storage import DeviceRecordCorrupted, DeviceStore
 from .version_info import DeviceIdentity, parse_cisco_ios_version
+
+
+class DeviceUploadError(Exception):
+    """Raised when one device's config/version pair can't be processed.
+    Caught per-device in the bulk endpoint so one bad upload never blocks the
+    rest of the batch."""
+
+
+def _process_device_upload(
+    raw_config: str, raw_version: str, data_key: bytes, store: DeviceStore
+) -> dict[str, Any]:
+    """The core single-device pipeline: redact -> parse -> evaluate ->
+    identity -> save. Shared by the single-upload and bulk-upload endpoints
+    so there is exactly one place that does this, not two copies that can
+    drift apart."""
+    if not raw_config.strip():
+        raise DeviceUploadError("Config file is empty")
+    if not raw_version.strip():
+        raise DeviceUploadError("Version info file is empty")
+
+    redacted_config = redact_config(raw_config)
+    facts = parse_cisco_ios_facts(redacted_config)
+    identity = parse_cisco_ios_version(raw_version)
+    findings = [dataclasses.asdict(f) for f in evaluate_cis(facts)]
+
+    record = {
+        "vendor": "cisco_ios",
+        "redacted_config": redacted_config,
+        "identity": dataclasses.asdict(identity),
+        "findings": findings,
+    }
+
+    device_id = store.save(record, encrypt=Fernet(data_key).encrypt)
+
+    return {
+        "device_id": device_id,
+        "identity": record["identity"],
+        "findings": findings,
+    }
 
 
 def build_devices_router(
@@ -45,26 +84,52 @@ def build_devices_router(
     ) -> dict[str, Any]:
         raw_config = config.file.read().decode("utf-8", errors="replace")
         raw_version = version_info.file.read().decode("utf-8", errors="replace")
+        try:
+            return _process_device_upload(raw_config, raw_version, data_key, store)
+        except DeviceUploadError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
 
-        redacted_config = redact_config(raw_config)
-        facts = parse_cisco_ios_facts(redacted_config)
-        identity = parse_cisco_ios_version(raw_version)
-        findings = [dataclasses.asdict(f) for f in evaluate_cis(facts)]
+    # Multipart shape: two same-length lists, `configs` and `version_infos`,
+    # paired positionally (configs[0] goes with version_infos[0], etc). This
+    # is the simplest shape a plain HTML multi-file form can produce -- two
+    # `<input type="file" multiple>` fields -- and validating the pairing is
+    # just a length check, no per-device field naming scheme required.
+    #
+    # Synchronous loop over N devices in one request, same as the
+    # single-device handler: no job queue or background-task machinery, since
+    # this is "process N files in one request", not a long-running workflow.
+    # Worth flagging (not solving here): a very large batch risks the
+    # deployment's request body size / timeout limits before it risks the
+    # in-process loop itself.
+    @router.post("/api/devices/bulk")
+    def upload_devices_bulk(
+        configs: list[UploadFile] = File(...),
+        version_infos: list[UploadFile] = File(...),
+        data_key: bytes = Depends(require_session),
+    ) -> dict[str, Any]:
+        if not configs:
+            raise HTTPException(status_code=400, detail="No device bundles provided")
+        if len(configs) != len(version_infos):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "configs and version_infos must contain the same number of "
+                    "files, paired positionally"
+                ),
+            )
 
-        record = {
-            "vendor": "cisco_ios",
-            "redacted_config": redacted_config,
-            "identity": dataclasses.asdict(identity),
-            "findings": findings,
-        }
+        results: list[dict[str, Any]] = []
+        for config, version_info in zip(configs, version_infos):
+            raw_config = config.file.read().decode("utf-8", errors="replace")
+            raw_version = version_info.file.read().decode("utf-8", errors="replace")
+            try:
+                results.append(
+                    _process_device_upload(raw_config, raw_version, data_key, store)
+                )
+            except DeviceUploadError as exc:
+                results.append({"error": str(exc), "config_filename": config.filename})
 
-        device_id = store.save(record, encrypt=Fernet(data_key).encrypt)
-
-        return {
-            "device_id": device_id,
-            "identity": record["identity"],
-            "findings": findings,
-        }
+        return {"results": results}
 
     @router.get("/api/devices/{device_id}")
     def get_device(
@@ -83,5 +148,61 @@ def build_devices_router(
             raise HTTPException(status_code=500, detail="Stored device data is invalid")
         pdf_bytes = generate_pdf_report(identity, record["findings"])
         return Response(content=pdf_bytes, media_type="application/pdf")
+
+    # Fleet scope = every currently-stored device, not just one bulk batch:
+    # the spec's own "across all uploaded devices" phrasing, and there's no
+    # concept of a "batch" persisted anywhere to scope to even if we wanted
+    # to -- devices from single-upload and bulk-upload are indistinguishable
+    # once stored, which is the right amount of state for what's asked here.
+    @router.get("/api/fleet/summary")
+    def fleet_summary(data_key: bytes = Depends(require_session)) -> dict[str, Any]:
+        records = store.list_all(decrypt=Fernet(data_key).decrypt)
+
+        devices: list[dict[str, Any]] = []
+        control_fail_counts: dict[str, dict[str, Any]] = {}
+        total_pass = 0
+        total_fail = 0
+
+        for device_id, record in records:
+            findings = record.get("findings", [])
+            pass_count = sum(1 for f in findings if f["status"] == "pass")
+            fail_count = sum(1 for f in findings if f["status"] == "fail")
+            total_pass += pass_count
+            total_fail += fail_count
+            devices.append(
+                {
+                    "device_id": device_id,
+                    "identity": record.get("identity"),
+                    "pass_count": pass_count,
+                    "fail_count": fail_count,
+                }
+            )
+            for f in findings:
+                if f["status"] != "fail":
+                    continue
+                entry = control_fail_counts.setdefault(
+                    f["control_id"],
+                    {
+                        "control_id": f["control_id"],
+                        "title": f["title"],
+                        "severity": f["severity"],
+                        "fail_count": 0,
+                    },
+                )
+                entry["fail_count"] += 1
+
+        most_common_failures = sorted(
+            control_fail_counts.values(),
+            key=lambda entry: entry["fail_count"],
+            reverse=True,
+        )
+
+        return {
+            "device_count": len(records),
+            "total_pass_count": total_pass,
+            "total_fail_count": total_fail,
+            "devices": devices,
+            "most_common_failures": most_common_failures,
+        }
 
     return router
