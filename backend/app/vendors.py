@@ -14,6 +14,12 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .facts import parse_cisco_ios_facts
+from .vendor_juniper_srx import (
+    REMEDIATION_OVERRIDES as _JUNIPER_SRX_REMEDIATION_OVERRIDES,
+    detect_juniper_srx,
+    parse_juniper_srx_facts,
+    parse_juniper_srx_version,
+)
 from .version_info import DeviceIdentity, parse_cisco_ios_version
 
 
@@ -65,5 +71,15 @@ register_vendor(
         detect=_detect_cisco_ios,
         parse_facts=parse_cisco_ios_facts,
         parse_identity=parse_cisco_ios_version,
+    )
+)
+
+register_vendor(
+    VendorProfile(
+        name="juniper_srx",
+        detect=detect_juniper_srx,
+        parse_facts=parse_juniper_srx_facts,
+        parse_identity=parse_juniper_srx_version,
+        remediation_overrides=_JUNIPER_SRX_REMEDIATION_OVERRIDES,
     )
 )

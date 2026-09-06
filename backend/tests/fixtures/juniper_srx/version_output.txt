@@ -1,0 +1,10 @@
+Hostname: srx-core1
+Model: srx340
+Junos: 21.2R3-S1.7
+JUNOS Software Release [21.2R3-S1.7]
+
+Hardware inventory:
+Item             Version  Part number     Serial number     Description
+Chassis                                JN123456AABC      SRX340
+Routing Engine 0        REV 15    750-058500      ABCD1234          RE-SRX340
+FPC 0                    REV 15    750-058501      ABCD1235          FPC

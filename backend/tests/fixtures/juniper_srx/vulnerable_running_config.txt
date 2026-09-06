@@ -1,0 +1,15 @@
+set system host-name srx-edge1
+set system services telnet
+set system services web-management http
+set system services finger
+set system services xnm-clear-text
+set system services dhcp-local-server group junos-default interface ge-0/0/0.0
+set system services ssh root-login allow
+set protocols lldp interface all
+set forwarding-options helpers bootp server 10.0.0.9
+set system name-server 8.8.8.8
+set system root-authentication plain-text-password "SuperSecretRootPW1"
+set system login user admin authentication plain-text-password "WeakUserPW1"
+set system login user admin class super-user
+set snmp community public authorization read-only
+set snmp community private authorization read-write
