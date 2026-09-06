@@ -10,7 +10,7 @@ from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import (
     Paragraph,
     SimpleDocTemplate,
@@ -51,16 +51,28 @@ def generate_pdf_report(
     elements.append(Spacer(1, 12))
 
     elements.append(Paragraph("Compliance Findings", styles["Heading2"]))
-    table_data = [["Control", "Framework", "Title", "Severity", "Status", "Remediation"]]
+    # Title and remediation text can run well past the column width now that
+    # the control set covers ~30-35 CIS controls (some remediation strings are
+    # 100+ characters) -- these must be Paragraph flowables so reportlab word
+    # -wraps them instead of drawing one un-wrapped line that bleeds into the
+    # next column.
+    cell_style = ParagraphStyle("cell", parent=styles["Normal"], fontSize=7, leading=8.5)
+
+    def _cell(value: str) -> Paragraph:
+        return Paragraph(escape(value), cell_style)
+
+    table_data: list[list[Any]] = [
+        ["Control", "Framework", "Title", "Severity", "Status", "Remediation"]
+    ]
     for finding in findings:
         table_data.append(
             [
                 finding["control_id"],
                 finding["framework"],
-                finding["title"],
+                _cell(finding["title"]),
                 finding["severity"],
                 finding["status"].upper(),
-                finding["remediation"] or "-",
+                _cell(finding["remediation"]) if finding["remediation"] else "-",
             ]
         )
     table = Table(table_data, colWidths=[55, 45, 110, 45, 40, 155])

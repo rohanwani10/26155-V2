@@ -3,6 +3,8 @@ hostname EdgeRouter1
 !
 enable password SuperSecretEnablePW1
 !
+username admin password 0 WeakUserPW1
+!
 no service password-encryption
 !
 line con 0

@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.rules import CIS_CONTROLS
 
 FIXTURES = Path(__file__).parent / "fixtures" / "cisco_ios"
 
@@ -50,6 +51,10 @@ def test_upload_vulnerable_config_fails_expected_controls(authed_client):
     assert findings["CIS-5.1"]["status"] == "fail"  # default snmp community
     assert findings["CIS-3.1"]["status"] == "fail"  # no aaa new-model
     assert findings["CIS-4.3"]["status"] == "fail"  # exec-timeout 0 0
+    assert findings["CIS-2.3"]["status"] == "fail"  # username configured with password
+    assert findings["CIS-7.1"]["status"] == "fail"  # cdp not disabled
+    assert findings["CIS-1.4"]["status"] == "fail"  # no vty access-class
+    assert len(findings) == len(CIS_CONTROLS)
 
 
 def test_upload_hardened_config_passes_all_controls(authed_client):
@@ -57,7 +62,7 @@ def test_upload_hardened_config_passes_all_controls(authed_client):
     assert resp.status_code == 200
     findings = resp.json()["findings"]
 
-    assert len(findings) == 9
+    assert len(findings) == len(CIS_CONTROLS)
     for finding in findings:
         assert finding["status"] == "pass", finding
 
@@ -95,6 +100,7 @@ def test_secrets_never_appear_in_stored_record(authed_client):
 
     assert "SuperSecretEnablePW1" not in body_text
     assert "SuperSecretVtyPW1" not in body_text
+    assert "WeakUserPW1" not in body_text
 
 
 def test_pdf_report_is_generated_and_contains_no_secrets(authed_client):
@@ -107,6 +113,7 @@ def test_pdf_report_is_generated_and_contains_no_secrets(authed_client):
     assert pdf_resp.headers["content-type"] == "application/pdf"
     assert b"SuperSecretEnablePW1" not in pdf_resp.content
     assert b"SuperSecretVtyPW1" not in pdf_resp.content
+    assert b"WeakUserPW1" not in pdf_resp.content
 
 
 def test_pdf_report_requires_authentication(tmp_path):
