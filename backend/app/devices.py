@@ -8,7 +8,7 @@ from typing import Any
 from cryptography.fernet import Fernet
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 
-from .evaluate import evaluate_cis
+from .evaluate import evaluate_all, evaluate_iso
 from .facts import parse_cisco_ios_facts
 from .redaction import redact_config
 from .report import generate_pdf_report
@@ -49,13 +49,15 @@ def build_devices_router(
         redacted_config = redact_config(raw_config)
         facts = parse_cisco_ios_facts(redacted_config)
         identity = parse_cisco_ios_version(raw_version)
-        findings = [dataclasses.asdict(f) for f in evaluate_cis(facts)]
+        findings = evaluate_all(facts)
+        iso_evidence = [dataclasses.asdict(f) for f in evaluate_iso(facts)]
 
         record = {
             "vendor": "cisco_ios",
             "redacted_config": redacted_config,
             "identity": dataclasses.asdict(identity),
             "findings": findings,
+            "iso_evidence": iso_evidence,
         }
 
         device_id = store.save(record, encrypt=Fernet(data_key).encrypt)
@@ -64,6 +66,7 @@ def build_devices_router(
             "device_id": device_id,
             "identity": record["identity"],
             "findings": findings,
+            "iso_evidence": iso_evidence,
         }
 
     @router.get("/api/devices/{device_id}")
@@ -81,7 +84,9 @@ def build_devices_router(
             identity = DeviceIdentity(**record["identity"])
         except (TypeError, KeyError):
             raise HTTPException(status_code=500, detail="Stored device data is invalid")
-        pdf_bytes = generate_pdf_report(identity, record["findings"])
+        pdf_bytes = generate_pdf_report(
+            identity, record["findings"], record.get("iso_evidence", [])
+        )
         return Response(content=pdf_bytes, media_type="application/pdf")
 
     return router

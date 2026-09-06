@@ -40,7 +40,7 @@ def test_upload_requires_authentication(tmp_path):
 def test_upload_vulnerable_config_fails_expected_controls(authed_client):
     resp = _upload(authed_client, "vulnerable_running_config.txt")
     assert resp.status_code == 200
-    findings = {f["control_id"]: f for f in resp.json()["findings"]}
+    findings = {f["control_id"]: f for f in resp.json()["findings"]["CIS"]}
 
     assert findings["CIS-4.1"]["status"] == "fail"  # ssh version 2 not configured
     assert findings["CIS-4.2"]["status"] == "fail"  # telnet enabled
@@ -60,7 +60,7 @@ def test_upload_vulnerable_config_fails_expected_controls(authed_client):
 def test_upload_hardened_config_passes_all_controls(authed_client):
     resp = _upload(authed_client, "hardened_running_config.txt")
     assert resp.status_code == 200
-    findings = resp.json()["findings"]
+    findings = resp.json()["findings"]["CIS"]
 
     assert len(findings) == len(CIS_CONTROLS)
     for finding in findings:
@@ -78,17 +78,20 @@ def test_device_identification_is_extracted_from_version_dump(authed_client):
 
 def test_failed_controls_have_remediation_passed_controls_do_not(authed_client):
     resp = _upload(authed_client, "vulnerable_running_config.txt")
-    for finding in resp.json()["findings"]:
-        if finding["status"] == "fail":
-            assert finding["remediation"]
-        else:
-            assert finding["remediation"] is None
+    for framework_findings in resp.json()["findings"].values():
+        for finding in framework_findings:
+            if finding["status"] == "fail":
+                assert finding["remediation"]
+            else:
+                assert finding["remediation"] is None
 
 
-def test_every_finding_is_a_cis_control(authed_client):
+def test_each_frameworks_findings_are_labeled_with_that_framework(authed_client):
     resp = _upload(authed_client, "vulnerable_running_config.txt")
-    for finding in resp.json()["findings"]:
-        assert finding["framework"] == "CIS"
+    findings = resp.json()["findings"]
+    for framework, framework_findings in findings.items():
+        for finding in framework_findings:
+            assert finding["framework"] == framework
 
 
 def test_secrets_never_appear_in_stored_record(authed_client):

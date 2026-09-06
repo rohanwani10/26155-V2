@@ -23,7 +23,9 @@ from .version_info import DeviceIdentity
 
 
 def generate_pdf_report(
-    identity: DeviceIdentity, findings: list[dict[str, Any]]
+    identity: DeviceIdentity,
+    findings_by_framework: dict[str, list[dict[str, Any]]],
+    iso_evidence: list[dict[str, Any]],
 ) -> bytes:
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter)
@@ -50,44 +52,92 @@ def generate_pdf_report(
     )
     elements.append(Spacer(1, 12))
 
-    elements.append(Paragraph("Compliance Findings", styles["Heading2"]))
     # Title and remediation text can run well past the column width now that
-    # the control set covers ~30-35 CIS controls (some remediation strings are
-    # 100+ characters) -- these must be Paragraph flowables so reportlab word
-    # -wraps them instead of drawing one un-wrapped line that bleeds into the
-    # next column.
+    # the control set covers ~30-35 controls per framework (some remediation
+    # strings are 100+ characters) -- these must be Paragraph flowables so
+    # reportlab word-wraps them instead of drawing one un-wrapped line that
+    # bleeds into the next column.
     cell_style = ParagraphStyle("cell", parent=styles["Normal"], fontSize=7, leading=8.5)
 
     def _cell(value: str) -> Paragraph:
         return Paragraph(escape(value), cell_style)
 
-    table_data: list[list[Any]] = [
-        ["Control", "Framework", "Title", "Severity", "Status", "Remediation"]
-    ]
-    for finding in findings:
-        table_data.append(
-            [
-                finding["control_id"],
-                finding["framework"],
-                _cell(finding["title"]),
-                finding["severity"],
-                finding["status"].upper(),
-                _cell(finding["remediation"]) if finding["remediation"] else "-",
-            ]
+    # CIS, NIST SP 800-53, and DISA STIG map 1:1 at the technical-control
+    # level, so each gets its own pass/fail findings table, broken out by
+    # framework per the results-view/PDF requirement.
+    for framework, findings in findings_by_framework.items():
+        elements.append(Paragraph(f"{framework} Findings", styles["Heading2"]))
+        table_data: list[list[Any]] = [
+            ["Control", "Title", "Severity", "Status", "Remediation"]
+        ]
+        for finding in findings:
+            table_data.append(
+                [
+                    finding["control_id"],
+                    _cell(finding["title"]),
+                    finding["severity"],
+                    finding["status"].upper(),
+                    _cell(finding["remediation"]) if finding["remediation"] else "-",
+                ]
+            )
+        table = Table(table_data, colWidths=[55, 150, 42, 40, 168])
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2c3e50")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                    ("FONTSIZE", (0, 0), (-1, -1), 7),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
         )
-    table = Table(table_data, colWidths=[55, 45, 110, 45, 40, 155])
-    table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2c3e50")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-                ("FONTSIZE", (0, 0), (-1, -1), 7),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ]
+        elements.append(table)
+        elements.append(Spacer(1, 12))
+
+    # ISO/IEC 27001 Annex A maps many facts to one control objective, so it
+    # is never rendered as a pass/fail line item -- each Annex A control gets
+    # a heading plus a table of the facts cited as evidence toward it.
+    elements.append(Paragraph("ISO/IEC 27001 Annex A (Evidentiary)", styles["Heading2"]))
+    elements.append(
+        Paragraph(
+            "ISO/IEC 27001 Annex A controls are broad control objectives, not "
+            "line-item technical checks. Each control below is supported by "
+            "one or more facts, shown as evidence for that objective -- this "
+            "is not a pass/fail verdict on the control itself.",
+            styles["Normal"],
         )
     )
-    elements.append(table)
+    elements.append(Spacer(1, 8))
+    for annex in iso_evidence:
+        elements.append(
+            Paragraph(f"{annex['control_id']} — {annex['title']}", styles["Heading3"])
+        )
+        evidence_table_data: list[list[Any]] = [
+            ["Supporting fact", "Evidence", "Remediation (if gap)"]
+        ]
+        for item in annex["evidence"]:
+            evidence_table_data.append(
+                [
+                    _cell(item["title"]),
+                    "Present" if item["satisfied"] else "Gap",
+                    _cell(item["remediation"]) if item["remediation"] else "-",
+                ]
+            )
+        evidence_table = Table(evidence_table_data, colWidths=[220, 60, 175])
+        evidence_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#34495e")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                    ("FONTSIZE", (0, 0), (-1, -1), 7),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+        elements.append(evidence_table)
+        elements.append(Spacer(1, 8))
 
     doc.build(elements)
     return buffer.getvalue()
