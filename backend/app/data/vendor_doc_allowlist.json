@@ -1,0 +1,5 @@
+{
+  "cisco_ios": ["www.cisco.com"],
+  "juniper_srx": ["www.juniper.net"],
+  "aws_security_groups": ["docs.aws.amazon.com"]
+}
