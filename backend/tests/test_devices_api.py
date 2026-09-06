@@ -153,6 +153,144 @@ def test_pdf_generation_survives_special_characters_in_device_identity(authed_cl
     assert pdf_resp.headers["content-type"] == "application/pdf"
 
 
+def _bulk_upload(client, bundles: list[tuple[str, str]]):
+    """bundles is a list of (config_filename, version_filename) pairs, paired
+    positionally into the `configs`/`version_infos` multipart lists."""
+    files = []
+    for config_filename, version_filename in bundles:
+        files.append(("configs", (config_filename, (FIXTURES / config_filename).read_bytes(), "text/plain")))
+        files.append(
+            ("version_infos", (version_filename, (FIXTURES / version_filename).read_bytes(), "text/plain"))
+        )
+    return client.post("/api/devices/bulk", files=files)
+
+
+def test_bulk_upload_requires_authentication(tmp_path):
+    app = create_app(tmp_path)
+    client = TestClient(app)
+    resp = _bulk_upload(
+        client,
+        [("vulnerable_running_config.txt", "version_output.txt")],
+    )
+    assert resp.status_code == 401
+
+
+def test_bulk_upload_processes_each_device_independently(authed_client):
+    resp = _bulk_upload(
+        authed_client,
+        [
+            ("vulnerable_running_config.txt", "version_output.txt"),
+            ("empty_running_config.txt", "version_output.txt"),
+            ("hardened_running_config.txt", "version_output.txt"),
+        ],
+    )
+    assert resp.status_code == 200
+    results = resp.json()["results"]
+    assert len(results) == 3
+
+    vulnerable_result, broken_result, hardened_result = results
+
+    assert "device_id" in vulnerable_result
+    assert len(vulnerable_result["findings"]["CIS"]) == len(CIS_CONTROLS)
+
+    assert "error" in broken_result
+    assert "device_id" not in broken_result
+
+    assert "device_id" in hardened_result
+    assert all(f["status"] == "pass" for f in hardened_result["findings"]["CIS"])
+
+
+def test_bulk_upload_devices_are_individually_retrievable(authed_client):
+    resp = _bulk_upload(
+        authed_client,
+        [
+            ("vulnerable_running_config.txt", "version_output.txt"),
+            ("hardened_running_config.txt", "version_output.txt"),
+        ],
+    )
+    for result in resp.json()["results"]:
+        get_resp = authed_client.get(f"/api/devices/{result['device_id']}")
+        assert get_resp.status_code == 200
+
+        pdf_resp = authed_client.get(f"/api/devices/{result['device_id']}/report.pdf")
+        assert pdf_resp.status_code == 200
+        assert pdf_resp.headers["content-type"] == "application/pdf"
+
+
+def test_bulk_upload_rejects_mismatched_pair_counts(authed_client):
+    files = [
+        ("configs", ("a.txt", (FIXTURES / "vulnerable_running_config.txt").read_bytes(), "text/plain")),
+        ("configs", ("b.txt", (FIXTURES / "hardened_running_config.txt").read_bytes(), "text/plain")),
+        ("version_infos", ("v.txt", (FIXTURES / "version_output.txt").read_bytes(), "text/plain")),
+    ]
+    resp = authed_client.post("/api/devices/bulk", files=files)
+    assert resp.status_code == 400
+
+
+def test_bulk_upload_rejects_empty_batch(authed_client):
+    # No `configs`/`version_infos` fields at all: FastAPI's own required-field
+    # validation rejects this with 422 before the handler's own emptiness
+    # check ever runs -- either way, an empty batch is never a 200.
+    resp = authed_client.post("/api/devices/bulk", files=[])
+    assert resp.status_code == 422
+
+
+def test_fleet_summary_requires_authentication(tmp_path):
+    app = create_app(tmp_path)
+    client = TestClient(app)
+    resp = client.get("/api/fleet/summary")
+    assert resp.status_code == 401
+
+
+def test_fleet_summary_is_empty_with_no_devices(authed_client):
+    resp = authed_client.get("/api/fleet/summary")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["device_count"] == 0
+    assert body["devices"] == []
+    for framework in ("CIS", "NIST SP 800-53", "DISA STIG"):
+        assert body["frameworks"][framework]["total_pass_count"] == 0
+        assert body["frameworks"][framework]["total_fail_count"] == 0
+        assert body["frameworks"][framework]["most_common_failures"] == []
+
+
+def test_fleet_summary_aggregates_across_all_stored_devices(authed_client):
+    # One single-device upload plus a bulk batch -- the fleet view covers
+    # every stored device, not just the most recent batch.
+    _upload(authed_client, "vulnerable_running_config.txt")
+    _bulk_upload(
+        authed_client,
+        [
+            ("vulnerable_running_config.txt", "version_output.txt"),
+            ("hardened_running_config.txt", "version_output.txt"),
+        ],
+    )
+
+    resp = authed_client.get("/api/fleet/summary")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert body["device_count"] == 3
+    assert len(body["devices"]) == 3
+    cis = body["frameworks"]["CIS"]
+    assert cis["total_pass_count"] + cis["total_fail_count"] == 3 * len(CIS_CONTROLS)
+
+    # CIS-4.1 (SSH v2) fails on both vulnerable uploads, passes on the
+    # hardened one -- it should be the (or tied for) most common failure.
+    top_failure = cis["most_common_failures"][0]
+    assert top_failure["fail_count"] >= 2
+    assert all(
+        f["fail_count"] <= top_failure["fail_count"] for f in cis["most_common_failures"]
+    )
+    failing_control_ids = {f["control_id"] for f in cis["most_common_failures"]}
+    assert "CIS-4.1" in failing_control_ids
+
+    # NIST/STIG get the same aggregation treatment, not silently dropped.
+    nist = body["frameworks"]["NIST SP 800-53"]
+    assert nist["total_pass_count"] + nist["total_fail_count"] == 3 * len(CIS_CONTROLS)
+    assert nist["most_common_failures"]
+
+
 def test_device_data_is_isolated_between_vault_instances(tmp_path):
     # Sanity check on the encrypted-storage integration: a device saved under
     # one login session's data key must still be readable after logging out

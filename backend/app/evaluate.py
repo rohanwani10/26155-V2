@@ -105,6 +105,13 @@ def evaluate_iso(facts: Any) -> list[IsoEvidenceFinding]:
     return findings
 
 
+# The three frameworks that map 1:1 at the technical-control level (ISO is
+# evaluated separately via evaluate_iso -- see evaluate_all). Shared so
+# callers that need to know the framework set (e.g. the fleet summary) don't
+# hardcode a second copy of these names that could drift out of sync.
+FRAMEWORK_NAMES = ("CIS", "NIST SP 800-53", "DISA STIG")
+
+
 def evaluate_all(facts: Any) -> dict[str, list[dict[str, Any]]]:
     """Findings broken out per framework, for the three frameworks that map
     1:1 at the technical-control level. ISO/IEC 27001 is deliberately not

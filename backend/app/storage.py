@@ -73,3 +73,21 @@ class DeviceStore:
             return dict(json.loads(decrypt(payload).decode("utf-8")))
         except (InvalidToken, UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise DeviceRecordCorrupted() from exc
+
+    def list_all(
+        self, decrypt: Callable[[bytes], bytes]
+    ) -> list[tuple[str, dict[str, Any]]]:
+        """Every stored device record, for fleet-wide aggregation. A record
+        that fails to decrypt/parse is skipped rather than failing the whole
+        listing -- one corrupted device shouldn't take down the fleet view,
+        same fail-isolated spirit as bulk upload."""
+        with self._connection() as conn:
+            rows = conn.execute("SELECT id, encrypted_payload FROM devices").fetchall()
+        records = []
+        for device_id, payload in rows:
+            try:
+                record = dict(json.loads(decrypt(payload).decode("utf-8")))
+            except (InvalidToken, UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            records.append((device_id, record))
+        return records
