@@ -7,3 +7,4 @@ mypy
 reportlab
 types-reportlab
 python-multipart
+chromadb
