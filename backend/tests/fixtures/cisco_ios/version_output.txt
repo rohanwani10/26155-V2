@@ -1,0 +1,33 @@
+Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.0(2)SE11, RELEASE SOFTWARE (fc3)
+Technical Support: http://www.cisco.com/techsupport
+Copyright (c) 1986-2017 by Cisco Systems, Inc.
+Compiled Fri 09-Jun-17 04:59 by prod_rel_team
+
+ROM: Bootstrap program is C2960 boot loader
+BOOTLDR: C2960 Boot Loader (C2960-HBOOT-M) Version 12.2(53r)SEY3, RELEASE SOFTWARE (fc1)
+
+EdgeRouter1 uptime is 12 weeks, 3 days, 4 hours, 20 minutes
+System returned to ROM by power-on
+System restarted at 09:12:44 UTC Mon Jan 5 2026
+System image file is "flash:c2960-lanbasek9-mz.150-2.SE11.bin"
+
+
+cisco WS-C2960-24TT-L (PowerPC405) processor (revision R0) with 65536K bytes of memory.
+Processor board ID FOC1534X2XY
+Last reset from power-on
+1 Virtual Ethernet interface
+24 FastEthernet interfaces
+2 Gigabit Ethernet interfaces
+The password-recovery mechanism is enabled.
+
+64K bytes of flash-simulated non-volatile configuration memory.
+Base ethernet MAC Address       : 00:1A:2B:3C:4D:5E
+Motherboard assembly number     : 73-10390-09
+Power supply part number        : 341-0097-02
+Motherboard serial number       : FOC15304M5X
+Model revision number           : R0
+Motherboard revision number     : A0
+Model number                    : WS-C2960-24TT-L
+System serial number            : FOC1534X2XY
+
+Configuration register is 0xF

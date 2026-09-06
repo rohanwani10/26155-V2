@@ -4,3 +4,6 @@ cryptography
 pytest
 httpx
 mypy
+reportlab
+types-reportlab
+python-multipart

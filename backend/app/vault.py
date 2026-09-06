@@ -89,17 +89,26 @@ class Vault:
 
         try:
             record = json.loads(self._vault_path.read_text())
-        except json.JSONDecodeError as exc:
+            unwrap_pairs = [
+                (
+                    bytes.fromhex(record["password_salt"]),
+                    record["wrapped_key_by_password"],
+                ),
+                (
+                    bytes.fromhex(record["recovery_salt"]),
+                    record["wrapped_key_by_recovery"],
+                ),
+            ]
+        except (json.JSONDecodeError, KeyError, ValueError) as exc:
+            # A syntactically-valid-but-incomplete file (missing/renamed
+            # keys, bad hex) is just as unusable as invalid JSON -- both mean
+            # the vault can't be trusted, not that the credential is wrong.
             raise VaultCorrupted() from exc
 
-        for salt_field, wrapped_field in (
-            ("password_salt", "wrapped_key_by_password"),
-            ("recovery_salt", "wrapped_key_by_recovery"),
-        ):
-            salt = bytes.fromhex(record[salt_field])
+        for salt, wrapped in unwrap_pairs:
             kek = Fernet(derive_fernet_key(credential, salt))
             try:
-                return kek.decrypt(record[wrapped_field].encode("ascii"))
+                return kek.decrypt(wrapped.encode("ascii"))
             except InvalidToken:
                 continue
 

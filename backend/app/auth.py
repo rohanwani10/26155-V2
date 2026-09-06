@@ -51,6 +51,21 @@ class SessionStore:
             self._sessions.pop(token, None)
 
 
+def make_require_session(sessions: SessionStore) -> Callable[..., bytes]:
+    """Shared across every protected router (auth's own /api/me, devices, and
+    whatever comes next) so they all gate on the same session store."""
+
+    def require_session(
+        session_token: Optional[str] = Cookie(default=None),
+    ) -> bytes:
+        data_key = sessions.get(session_token)
+        if data_key is None:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+        return data_key
+
+    return require_session
+
+
 class LoginLockedOut(Exception):
     pass
 
@@ -100,20 +115,14 @@ class LoginRequest(BaseModel):
 
 
 def build_auth_router(
-    data_dir: Path, clock: Callable[[], float] = time.time
+    data_dir: Path,
+    sessions: SessionStore,
+    clock: Callable[[], float] = time.time,
 ) -> APIRouter:
     router = APIRouter()
     vault = Vault(data_dir / "vault.json")
-    sessions = SessionStore()
     throttle = LoginThrottle(clock=clock)
-
-    def require_session(
-        session_token: Optional[str] = Cookie(default=None),
-    ) -> bytes:
-        data_key = sessions.get(session_token)
-        if data_key is None:
-            raise HTTPException(status_code=401, detail="Not authenticated")
-        return data_key
+    require_session = make_require_session(sessions)
 
     @router.get("/api/setup/status")
     def setup_status() -> dict[str, bool]:

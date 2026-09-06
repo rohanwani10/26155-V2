@@ -1,0 +1,29 @@
+!
+hostname CoreSwitch1
+!
+service password-encryption
+!
+enable secret 9 $9$abcdefghij$fakehashvalue1234
+!
+aaa new-model
+aaa authentication login default local
+!
+ip ssh version 2
+!
+banner login ^C
+Authorized access only. All activity is monitored and logged.
+^C
+!
+logging host 10.0.0.5
+logging trap informational
+!
+snmp-server community Xk92FpQZbrewCustom RO
+!
+line con 0
+ exec-timeout 5 0
+line vty 0 4
+ transport input ssh
+ exec-timeout 10 0
+ login local
+!
+end

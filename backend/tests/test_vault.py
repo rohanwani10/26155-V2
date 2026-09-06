@@ -82,6 +82,19 @@ def test_recovery_key_is_never_stored_in_plaintext_in_the_vault_file(tmp_path):
     assert recovery_key not in on_disk
 
 
+def test_valid_json_missing_expected_fields_raises_vault_corrupted(tmp_path):
+    vault_path = tmp_path / "vault.json"
+    vault = Vault(vault_path)
+    vault.setup("correct horse battery staple")
+
+    incomplete = json.loads(vault_path.read_text())
+    del incomplete["wrapped_key_by_recovery"]
+    vault_path.write_text(json.dumps(incomplete))
+
+    with pytest.raises(VaultCorrupted):
+        vault.unlock("correct horse battery staple")
+
+
 def test_data_key_encrypts_and_decrypts_arbitrary_data(tmp_path):
     vault = Vault(tmp_path / "vault.json")
     vault.setup("correct horse battery staple")
