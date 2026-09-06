@@ -81,6 +81,15 @@ _REDACTION_RULES: list[tuple[Pattern, Replacer]] = [
 ]
 
 
+def register_redaction_rule(pattern: Pattern, replacer: Replacer) -> None:
+    """Lets a vendor module add its own secret-shaped patterns (Juniper/
+    FortiGate/etc. all spell secrets differently) without editing the rule
+    list above. Every rule runs on every upload regardless of vendor -- cheap,
+    and safe since these patterns target vendor-specific keywords that don't
+    collide with each other's syntax."""
+    _REDACTION_RULES.append((pattern, replacer))
+
+
 def redact_config(raw_text: str) -> str:
     redacted = raw_text
     for pattern, replacer in _REDACTION_RULES:

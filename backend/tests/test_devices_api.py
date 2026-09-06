@@ -126,6 +126,17 @@ def test_pdf_report_requires_authentication(tmp_path):
     assert resp.status_code == 401
 
 
+def test_upload_from_unrecognized_vendor_is_rejected(authed_client):
+    resp = authed_client.post(
+        "/api/devices",
+        files={
+            "config": ("running-config.txt", b"some config nobody recognizes\n", "text/plain"),
+            "version_info": ("version.txt", b"Acme WidgetOS, v1.0\n", "text/plain"),
+        },
+    )
+    assert resp.status_code == 400
+
+
 def test_device_not_found_returns_404(authed_client):
     resp = authed_client.get("/api/devices/does-not-exist")
     assert resp.status_code == 404

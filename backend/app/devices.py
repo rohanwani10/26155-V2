@@ -9,11 +9,11 @@ from cryptography.fernet import Fernet
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 
 from .evaluate import FRAMEWORK_NAMES, evaluate_all, evaluate_iso
-from .facts import parse_cisco_ios_facts
 from .redaction import redact_config
 from .report import generate_pdf_report
 from .storage import DeviceRecordCorrupted, DeviceStore
-from .version_info import DeviceIdentity, parse_cisco_ios_version
+from .vendors import detect_vendor
+from .version_info import DeviceIdentity
 
 
 class DeviceUploadError(Exception):
@@ -22,26 +22,38 @@ class DeviceUploadError(Exception):
     rest of the batch."""
 
 
+class UnknownVendorError(DeviceUploadError):
+    """No registered vendor profile recognized this upload. Placeholder until
+    the unknown-vendor queue exists: at that point this branch should queue
+    the config's unrecognized lines instead of failing the upload."""
+
+
 def _process_device_upload(
     raw_config: str, raw_version: str, data_key: bytes, store: DeviceStore
 ) -> dict[str, Any]:
-    """The core single-device pipeline: redact -> parse -> evaluate ->
-    identity -> save. Shared by the single-upload and bulk-upload endpoints
-    so there is exactly one place that does this, not two copies that can
-    drift apart."""
+    """The core single-device pipeline: redact -> detect vendor -> parse ->
+    evaluate -> identity -> save. Shared by the single-upload and bulk-upload
+    endpoints so there is exactly one place that does this, not two copies
+    that can drift apart."""
     if not raw_config.strip():
         raise DeviceUploadError("Config file is empty")
     if not raw_version.strip():
         raise DeviceUploadError("Version info file is empty")
 
+    profile = detect_vendor(raw_config, raw_version)
+    if profile is None:
+        raise UnknownVendorError("Unrecognized vendor")
+
     redacted_config = redact_config(raw_config)
-    facts = parse_cisco_ios_facts(redacted_config)
-    identity = parse_cisco_ios_version(raw_version)
-    findings = evaluate_all(facts)
-    iso_evidence = [dataclasses.asdict(f) for f in evaluate_iso(facts)]
+    facts = profile.parse_facts(redacted_config)
+    identity = profile.parse_identity(raw_version)
+    findings = evaluate_all(facts, profile.remediation_overrides)
+    iso_evidence = [
+        dataclasses.asdict(f) for f in evaluate_iso(facts, profile.remediation_overrides)
+    ]
 
     record = {
-        "vendor": "cisco_ios",
+        "vendor": profile.name,
         "redacted_config": redacted_config,
         "identity": dataclasses.asdict(identity),
         "findings": findings,
