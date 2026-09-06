@@ -9,6 +9,7 @@ from .chat import build_chat_router
 from .devices import build_devices_router
 from .llm import LlmClient, OllamaLlmClient
 from .training import TrainingQueueStore, TrainingRuleStore, build_training_router
+from .training_suggestions import build_training_suggestions_router
 
 
 def create_app(
@@ -31,5 +32,8 @@ def create_app(
         build_devices_router(data_dir, require_session, queue_store, rule_store)
     )
     app.include_router(build_training_router(require_session, queue_store, rule_store))
+    app.include_router(
+        build_training_suggestions_router(require_session, rule_store, resolved_llm_client)
+    )
     app.include_router(build_chat_router(data_dir, require_session, resolved_llm_client))
     return app
