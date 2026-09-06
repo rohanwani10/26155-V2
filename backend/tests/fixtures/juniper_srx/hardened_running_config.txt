@@ -1,0 +1,28 @@
+set system host-name srx-core1
+set system services ssh protocol-version v2
+set system services ssh client-alive-interval 60
+set system services web-management https system-generate-certificate
+set system internet-options no-source-route
+set system root-authentication encrypted-password "$6$abcdefgh$fakehashvalueRoot1234567890abcdefghijklmno"
+set system login user admin authentication encrypted-password "$6$xyz12345$fakehashvalueAdmin1234567890abcdefghij"
+set system login user admin class super-user
+set system login user remote class super-user
+set system login password minimum-length 8
+set system login retry-options tries-before-disconnect 3
+set system login retry-options lockout-period 60
+set system login idle-timeout 10
+set system login message "Authorized access only. All activity is monitored and logged."
+set system login announcement "Authorized access only. All activity is monitored and logged."
+set system authentication-order [ tacplus password ]
+set system tacplus-server 10.0.0.7 secret "TacacsSharedSecret1"
+set system accounting events [ login interactive-commands ]
+set system accounting destination tacplus
+set system syslog host 10.0.0.5 any info
+set system syslog file messages any info
+set system syslog file messages archive size 1m
+set system syslog time-format year millisecond
+set snmp community Xk92FpQZbrewCustom authorization read-only
+set firewall filter PROTECT-RE term allow-mgmt from source-address 10.0.0.0/24
+set firewall filter PROTECT-RE term allow-mgmt then accept
+set firewall filter PROTECT-RE term deny-all then discard
+set interfaces lo0 unit 0 family inet filter input PROTECT-RE

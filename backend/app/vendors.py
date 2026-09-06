@@ -18,6 +18,12 @@ from .vendor_aws_security_groups import (
     parse_aws_security_group_facts,
     parse_aws_security_group_identity,
 )
+from .vendor_juniper_srx import (
+    REMEDIATION_OVERRIDES as _JUNIPER_SRX_REMEDIATION_OVERRIDES,
+    detect_juniper_srx,
+    parse_juniper_srx_facts,
+    parse_juniper_srx_version,
+)
 from .version_info import DeviceIdentity, parse_cisco_ios_version
 
 
@@ -121,5 +127,16 @@ register_vendor(
                 "--protocol tcp --port <22|23|3389> --cidr <management-cidr>/32"
             ),
         },
+    )
+)
+
+
+register_vendor(
+    VendorProfile(
+        name="juniper_srx",
+        detect=detect_juniper_srx,
+        parse_facts=parse_juniper_srx_facts,
+        parse_identity=parse_juniper_srx_version,
+        remediation_overrides=_JUNIPER_SRX_REMEDIATION_OVERRIDES,
     )
 )
