@@ -6,12 +6,13 @@ from pathlib import Path
 from typing import Any
 
 from cryptography.fernet import Fernet
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 
 from .evaluate import FRAMEWORK_NAMES, evaluate_all, evaluate_iso
 from .redaction import redact_config
 from .report import generate_pdf_report
 from .storage import DeviceRecordCorrupted, DeviceStore
+from .training import TrainingQueueStore, TrainingRuleStore, build_trained_facts
 from .vendors import detect_vendor
 from .version_info import DeviceIdentity
 
@@ -22,14 +23,14 @@ class DeviceUploadError(Exception):
     rest of the batch."""
 
 
-class UnknownVendorError(DeviceUploadError):
-    """No registered vendor profile recognized this upload. Placeholder until
-    the unknown-vendor queue exists: at that point this branch should queue
-    the config's unrecognized lines instead of failing the upload."""
-
-
 def _process_device_upload(
-    raw_config: str, raw_version: str, data_key: bytes, store: DeviceStore
+    raw_config: str,
+    raw_version: str,
+    vendor_hint: str | None,
+    data_key: bytes,
+    store: DeviceStore,
+    queue_store: TrainingQueueStore,
+    rule_store: TrainingRuleStore,
 ) -> dict[str, Any]:
     """The core single-device pipeline: redact -> detect vendor -> parse ->
     evaluate -> identity -> save. Shared by the single-upload and bulk-upload
@@ -41,19 +42,35 @@ def _process_device_upload(
         raise DeviceUploadError("Version info file is empty")
 
     profile = detect_vendor(raw_config, raw_version)
-    if profile is None:
-        raise UnknownVendorError("Unrecognized vendor")
-
     redacted_config = redact_config(raw_config)
-    facts = profile.parse_facts(redacted_config)
-    identity = profile.parse_identity(raw_version)
-    findings = evaluate_all(facts, profile.remediation_overrides)
+
+    if profile is not None:
+        vendor_name = profile.name
+        facts: Any = profile.parse_facts(redacted_config)
+        identity = profile.parse_identity(raw_version)
+        remediation_overrides = profile.remediation_overrides
+    else:
+        # Unrecognized vendor (see training.py): no fixed parser exists, so
+        # instead of failing the upload, the fact model is built from this
+        # vendor's admin-confirmed rules -- every fact defaults False, lines
+        # that match a rule flip that rule's fact, and lines that match no
+        # rule are queued for the admin to map later. Same evaluate_all/
+        # evaluate_iso machinery from here on, no separate code path.
+        vendor_name = (vendor_hint or "").strip() or "unknown"
+        rules = rule_store.list_for_vendor(vendor_name, decrypt=Fernet(data_key).decrypt)
+        facts, unrecognized_lines = build_trained_facts(redacted_config, rules)
+        for line in unrecognized_lines:
+            queue_store.add(vendor_name, line, encrypt=Fernet(data_key).encrypt)
+        identity = DeviceIdentity(model=None, serial_number=None, os_version=None)
+        remediation_overrides = {}
+
+    findings = evaluate_all(facts, remediation_overrides)
     iso_evidence = [
-        dataclasses.asdict(f) for f in evaluate_iso(facts, profile.remediation_overrides)
+        dataclasses.asdict(f) for f in evaluate_iso(facts, remediation_overrides)
     ]
 
     record = {
-        "vendor": profile.name,
+        "vendor": vendor_name,
         "redacted_config": redacted_config,
         "identity": dataclasses.asdict(identity),
         "findings": findings,
@@ -71,7 +88,10 @@ def _process_device_upload(
 
 
 def build_devices_router(
-    data_dir: Path, require_session: Callable[..., bytes]
+    data_dir: Path,
+    require_session: Callable[..., bytes],
+    queue_store: TrainingQueueStore,
+    rule_store: TrainingRuleStore,
 ) -> APIRouter:
     router = APIRouter()
     store = DeviceStore(data_dir / "devices.db")
@@ -95,12 +115,15 @@ def build_devices_router(
     def upload_device(
         config: UploadFile = File(...),
         version_info: UploadFile = File(...),
+        vendor_hint: str | None = Form(default=None),
         data_key: bytes = Depends(require_session),
     ) -> dict[str, Any]:
         raw_config = config.file.read().decode("utf-8", errors="replace")
         raw_version = version_info.file.read().decode("utf-8", errors="replace")
         try:
-            return _process_device_upload(raw_config, raw_version, data_key, store)
+            return _process_device_upload(
+                raw_config, raw_version, vendor_hint, data_key, store, queue_store, rule_store
+            )
         except DeviceUploadError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
@@ -120,6 +143,7 @@ def build_devices_router(
     def upload_devices_bulk(
         configs: list[UploadFile] = File(...),
         version_infos: list[UploadFile] = File(...),
+        vendor_hint: str | None = Form(default=None),
         data_key: bytes = Depends(require_session),
     ) -> dict[str, Any]:
         if not configs:
@@ -139,7 +163,15 @@ def build_devices_router(
             raw_version = version_info.file.read().decode("utf-8", errors="replace")
             try:
                 results.append(
-                    _process_device_upload(raw_config, raw_version, data_key, store)
+                    _process_device_upload(
+                        raw_config,
+                        raw_version,
+                        vendor_hint,
+                        data_key,
+                        store,
+                        queue_store,
+                        rule_store,
+                    )
                 )
             except DeviceUploadError as exc:
                 results.append({"error": str(exc), "config_filename": config.filename})

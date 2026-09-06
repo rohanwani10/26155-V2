@@ -126,15 +126,33 @@ def test_pdf_report_requires_authentication(tmp_path):
     assert resp.status_code == 401
 
 
-def test_upload_from_unrecognized_vendor_is_rejected(authed_client):
+def test_upload_from_unrecognized_vendor_succeeds_and_queues_lines(authed_client):
+    # Ticket 08: an unrecognized vendor no longer fails the upload -- it's
+    # queued for manual training instead. See test_training_api.py for the
+    # full training-loop coverage (queue listing, confirming mappings, etc).
     resp = authed_client.post(
         "/api/devices",
         files={
             "config": ("running-config.txt", b"some config nobody recognizes\n", "text/plain"),
             "version_info": ("version.txt", b"Acme WidgetOS, v1.0\n", "text/plain"),
         },
+        data={"vendor_hint": "acme_widgetos"},
     )
-    assert resp.status_code == 400
+    assert resp.status_code == 200
+    body = resp.json()
+    findings = {f["control_id"]: f for f in body["findings"]["CIS"]}
+    assert len(findings) == len(CIS_CONTROLS)
+    # Every fact starts False with zero confirmed rules for this vendor, so a
+    # control that requires the fact to be True (e.g. SSH v2) fails, while
+    # one that requires it False (e.g. Telnet disabled) reads as compliant.
+    assert findings["CIS-4.1"]["status"] == "fail"  # ssh_version_2 defaults False
+    assert findings["CIS-4.2"]["status"] == "pass"  # telnet_enabled defaults False
+
+    queue_resp = authed_client.get(
+        "/api/training/queue", params={"vendor": "acme_widgetos"}
+    )
+    assert queue_resp.status_code == 200
+    assert "some config nobody recognizes" in queue_resp.json()["lines"]
 
 
 def test_device_not_found_returns_404(authed_client):
