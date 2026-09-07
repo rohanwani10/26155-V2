@@ -5,7 +5,9 @@ import { ChatScreen } from "./ChatScreen";
 import { FleetDashboardScreen } from "./FleetDashboardScreen";
 import { LandingScreen } from "./LandingScreen";
 import { LoginScreen } from "./LoginScreen";
-import { Nav, type NavTarget } from "./Nav";
+import { type NavTarget } from "./Nav";
+import { Sidebar } from "./Sidebar";
+import { NetworkHealthScreen } from "./NetworkHealthScreen";
 import { ResultsScreen } from "./ResultsScreen";
 import { SetupScreen } from "./SetupScreen";
 import { TrainingScreen } from "./TrainingScreen";
@@ -21,6 +23,7 @@ type Screen =
   | { name: "bulk-upload" }
   | { name: "fleet" }
   | { name: "training" }
+  | { name: "network-health" }
   | { name: "results"; result: UploadResult }
   | { name: "chat"; deviceId: string };
 
@@ -29,6 +32,7 @@ const NAV_TARGETS: Record<string, NavTarget> = {
   "bulk-upload": "bulk-upload",
   fleet: "fleet",
   training: "training",
+  "network-health": "network-health",
 };
 
 export default function App() {
@@ -76,6 +80,9 @@ export default function App() {
       case "training":
         setScreen({ name: "training" });
         break;
+      case "network-health":
+        setScreen({ name: "network-health" });
+        break;
     }
   }
 
@@ -85,10 +92,10 @@ export default function App() {
       .catch(() => goToLogin());
   }
 
-  const withNav = (content: React.ReactNode) => (
-    <div>
-      <Nav current={NAV_TARGETS[screen.name] ?? null} onNavigate={navigate} onLogout={handleLogout} />
-      {content}
+  const withSidebar = (content: React.ReactNode) => (
+    <div className="app-layout">
+      <Sidebar current={NAV_TARGETS[screen.name] ?? null} onNavigate={navigate} onLogout={handleLogout} />
+      <main className="app-main-content">{content}</main>
     </div>
   );
 
@@ -107,24 +114,26 @@ export default function App() {
         />
       );
     case "upload":
-      return withNav(
+      return withSidebar(
         <UploadScreen
           onUploaded={(result) => setScreen({ name: "results", result })}
           onAuthExpired={goToLogin}
         />,
       );
     case "bulk-upload":
-      return withNav(
+      return withSidebar(
         <BulkUploadScreen onViewDevice={viewDevice} onAuthExpired={goToLogin} />,
       );
     case "fleet":
-      return withNav(
+      return withSidebar(
         <FleetDashboardScreen onViewDevice={viewDevice} onAuthExpired={goToLogin} />,
       );
     case "training":
-      return withNav(<TrainingScreen onAuthExpired={goToLogin} />);
+      return withSidebar(<TrainingScreen onAuthExpired={goToLogin} />);
+    case "network-health":
+      return withSidebar(<NetworkHealthScreen />);
     case "results":
-      return withNav(
+      return withSidebar(
         <ResultsScreen
           result={screen.result}
           onUploadAnother={() => setScreen({ name: "upload" })}
@@ -133,7 +142,7 @@ export default function App() {
         />,
       );
     case "chat":
-      return withNav(
+      return withSidebar(
         <ChatScreen
           deviceId={screen.deviceId}
           onBack={() => viewDevice(screen.deviceId)}

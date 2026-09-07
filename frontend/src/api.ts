@@ -130,3 +130,45 @@ export function sendChatMessage(deviceId: string, question: string) {
 export function getChatHistory(deviceId: string) {
   return request<ChatHistoryResponse>(`/api/devices/${deviceId}/chat`);
 }
+
+export function getNetworkHealthStatus() {
+  return request<{
+    mode: string;
+    active_interface: string;
+    links: any[];
+    alerts: any[];
+    recommendations: any[];
+    simulated_spike: string | null;
+  }>("/api/network-health/status");
+}
+
+export function setNetworkHealthMode(mode: string) {
+  return request<{
+    mode: string;
+    active_interface: string;
+    links: any[];
+    alerts: any[];
+    recommendations: any[];
+    simulated_spike: string | null;
+  }>("/api/network-health/mode", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode }),
+  });
+}
+
+export function simulateNetworkEvent(link_id: string | null) {
+  return request<{
+    mode: string;
+    active_interface: string;
+    links: any[];
+    alerts: any[];
+    recommendations: any[];
+    simulated_spike: string | null;
+  }>("/api/network-health/simulate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ link_id }),
+  });
+}
+

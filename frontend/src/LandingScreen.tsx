@@ -13,9 +13,9 @@ export function LandingScreen({
   };
 
   return (
-    <div>
+    <div className="standalone-container">
       {/* Landing Navbar */}
-      <nav>
+      <nav className="landing-nav">
         <div className="nav-brand" onClick={onGoToLogin}>
           <span className="nav-brand-logo">U</span>
           <span>UniConfig</span>

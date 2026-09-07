@@ -44,33 +44,35 @@ export function SetupScreen({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <div style={{ maxWidth: 440, margin: "40px auto" }} className="card card-dark">
-      <h1 style={{ color: "#FFF" }}>Set up your admin account</h1>
-      <p style={{ color: "var(--text-light-muted)" }}>
-        Initialize master encryption and security credentials
-      </p>
-      <form onSubmit={handleSubmit} style={{ maxWidth: "100%" }}>
-        <label style={{ color: "#FFF" }}>
-          Master password
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </label>
-        <label style={{ color: "#FFF" }}>
-          Confirm password
-          <input
-            type="password"
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-          />
-        </label>
-        {error && <p role="alert">{error}</p>}
-        <button type="submit" className="btn-primary" style={{ width: "100%", marginTop: 8 }}>
-          Create account
-        </button>
-      </form>
+    <div className="standalone-container">
+      <div style={{ maxWidth: 440, margin: "40px auto" }} className="card card-dark">
+        <h1 style={{ color: "#FFF" }}>Set up your admin account</h1>
+        <p style={{ color: "var(--text-light-muted)" }}>
+          Initialize master encryption and security credentials
+        </p>
+        <form onSubmit={handleSubmit} style={{ maxWidth: "100%" }}>
+          <label style={{ color: "#FFF" }}>
+            Master password
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </label>
+          <label style={{ color: "#FFF" }}>
+            Confirm password
+            <input
+              type="password"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+            />
+          </label>
+          {error && <p role="alert">{error}</p>}
+          <button type="submit" className="btn-primary" style={{ width: "100%", marginTop: 8 }}>
+            Create account
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

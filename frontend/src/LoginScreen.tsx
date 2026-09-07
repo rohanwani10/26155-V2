@@ -30,7 +30,8 @@ export function LoginScreen({
   }
 
   return (
-    <div style={{ maxWidth: 840, margin: "40px auto" }} className="card card-dark">
+    <div className="standalone-container">
+      <div style={{ maxWidth: 840, margin: "40px auto" }} className="card card-dark">
       <div className="grid-2" style={{ alignItems: "center" }}>
         {/* Left Branding & Highlights */}
         <div style={{ paddingRight: 16 }}>
@@ -135,5 +136,6 @@ export function LoginScreen({
         </div>
       </div>
     </div>
-  );
+  </div>
+);
 }
