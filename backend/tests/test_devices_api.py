@@ -1,3 +1,5 @@
+import io
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -337,3 +339,143 @@ def test_device_data_is_isolated_between_vault_instances(tmp_path):
 
     resp = client.get(f"/api/devices/{device_id}")
     assert resp.status_code == 200
+
+
+def _make_zip(entries: dict[str, bytes]) -> bytes:
+    """entries is filename -> raw bytes. ZIP_STORED (the default compression
+    for writestr with no ZipFile-level compression set) so a later test can
+    corrupt one entry's payload by flipping a byte directly in the archive
+    bytes, without touching the others."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        for name, content in entries.items():
+            zf.writestr(name, content)
+    return buf.getvalue()
+
+
+def _zip_bulk_upload(client, raw_zip: bytes, vendor_hint: str | None = None):
+    data = {"vendor_hint": vendor_hint} if vendor_hint is not None else {}
+    return client.post(
+        "/api/devices/bulk/zip",
+        files={"zip_file": ("devices.zip", raw_zip, "application/zip")},
+        data=data,
+    )
+
+
+def test_zip_bulk_upload_requires_authentication(tmp_path):
+    app = create_app(tmp_path)
+    client = TestClient(app)
+    raw_zip = _make_zip({"a.txt": b"some config"})
+    resp = _zip_bulk_upload(client, raw_zip)
+    assert resp.status_code == 401
+
+
+def test_zip_bulk_upload_creates_one_device_per_file(authed_client):
+    entries = {
+        "device1.txt": (FIXTURES / "vulnerable_running_config.txt").read_bytes(),
+        "device2.txt": (FIXTURES / "hardened_running_config.txt").read_bytes(),
+        "device3.txt": (
+            Path(__file__).parent
+            / "fixtures"
+            / "juniper_srx"
+            / "hardened_running_config.txt"
+        ).read_bytes(),
+    }
+    raw_zip = _make_zip(entries)
+
+    resp = _zip_bulk_upload(authed_client, raw_zip)
+    assert resp.status_code == 200
+    results = resp.json()["results"]
+    assert len(results) == 3
+
+    # None of these entries had a matching version/identity file inside the
+    # zip, so every one degrades through the same "unrecognized vendor"
+    # path a config-only upload already uses elsewhere (see
+    # test_upload_from_unrecognized_vendor_succeeds_and_queues_lines): it
+    # still becomes a device, just with empty/unknown identity fields, not a
+    # crash or a rejected upload.
+    for result in results:
+        assert "device_id" in result, result
+        assert result["identity"] == {
+            "model": None,
+            "serial_number": None,
+            "os_version": None,
+            "resource_id": None,
+            "account": None,
+            "region": None,
+        }
+        assert len(result["findings"]["CIS"]) == len(CIS_CONTROLS)
+
+        get_resp = authed_client.get(f"/api/devices/{result['device_id']}")
+        assert get_resp.status_code == 200
+        assert get_resp.json()["vendor"] == "unknown"
+
+
+def test_zip_bulk_upload_isolates_corrupt_entry(authed_client):
+    good1 = (FIXTURES / "vulnerable_running_config.txt").read_bytes()
+    good2 = (FIXTURES / "hardened_running_config.txt").read_bytes()
+    bad = b"this entry's stored bytes will be corrupted after writing\n"
+    raw_zip = bytearray(
+        _make_zip({"good1.txt": good1, "bad.txt": bad, "good2.txt": good2})
+    )
+
+    # Flip a byte inside "bad.txt"'s stored payload (ZIP_STORED, so its bytes
+    # are literally present in the archive) without touching its recorded
+    # CRC-32 -- zipfile.read() then raises BadZipFile for that one entry,
+    # exactly the "one corrupt entry in the batch" case this endpoint must
+    # isolate rather than let take down the other two.
+    idx = raw_zip.find(bad)
+    assert idx != -1
+    raw_zip[idx] ^= 0xFF
+
+    resp = _zip_bulk_upload(authed_client, bytes(raw_zip))
+    assert resp.status_code == 200
+    results = resp.json()["results"]
+    assert len(results) == 3
+
+    good_results = [r for r in results if "device_id" in r]
+    error_results = [r for r in results if "error" in r]
+    assert len(good_results) == 2
+    assert len(error_results) == 1
+    assert error_results[0]["config_filename"] == "bad.txt"
+
+
+def test_zip_bulk_upload_unrecognized_vendor_queues_and_does_not_crash(authed_client):
+    raw_zip = _make_zip({"acme.txt": b"some config nobody recognizes\n"})
+
+    resp = _zip_bulk_upload(authed_client, raw_zip, vendor_hint="acme_widgetos")
+    assert resp.status_code == 200
+    results = resp.json()["results"]
+    assert len(results) == 1
+    assert "device_id" in results[0]
+
+    get_resp = authed_client.get(f"/api/devices/{results[0]['device_id']}")
+    assert get_resp.json()["vendor"] == "acme_widgetos"
+
+    queue_resp = authed_client.get(
+        "/api/training/queue", params={"vendor": "acme_widgetos"}
+    )
+    assert queue_resp.status_code == 200
+    assert "some config nobody recognizes" in queue_resp.json()["lines"]
+
+
+def test_zip_bulk_upload_rejects_non_zip_file(authed_client):
+    resp = authed_client.post(
+        "/api/devices/bulk/zip",
+        files={"zip_file": ("devices.zip", b"not a zip archive", "application/zip")},
+    )
+    assert resp.status_code == 400
+
+
+def test_matched_pair_bulk_upload_unaffected_by_zip_endpoint(authed_client):
+    # Existing matched-list bulk upload continues to work unchanged -- the
+    # zip endpoint is purely additive.
+    resp = _bulk_upload(
+        authed_client,
+        [
+            ("vulnerable_running_config.txt", "version_output.txt"),
+            ("hardened_running_config.txt", "version_output.txt"),
+        ],
+    )
+    assert resp.status_code == 200
+    assert len(resp.json()["results"]) == 2
