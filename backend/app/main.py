@@ -24,6 +24,10 @@ def create_app(
     data_dir.mkdir(parents=True, exist_ok=True)
     app = FastAPI(title="Network Compliance Engine")
 
+    @app.get("/health")
+    def health() -> dict[str, str]:
+        return {"status": "ok"}
+
     sessions = SessionStore()
     require_session = make_require_session(sessions)
 
