@@ -16,6 +16,7 @@ fifth abstraction isn't earning its keep.
 """
 
 import hashlib
+import re
 from typing import Protocol
 from urllib.parse import urlparse
 
@@ -96,13 +97,24 @@ class OllamaLlmClient:
         return embedding
 
 
+_EMBED_DIMS = 32
+
+
 class FakeLlmClient:
     """Deterministic, in-memory implementation for the main test suite.
     `interpret_response`/`verify_result` are plain settable attributes so a
     test can reprogram them mid-test (e.g. to exercise the verify-fails
-    fallback path). `embed` is a cheap hash-based fixed-length vector -- not
-    semantically meaningful, but deterministic, so retrieval in tests is
-    reproducible without a real embedding model."""
+    fallback path). `interpret_calls`/`verify_calls` count invocations so a
+    test can assert an LLM path was (or, for ticket 16's embedding
+    pre-check, was NOT) reached -- no separate spy/mock object needed.
+
+    `embed` is a deterministic hashing-trick bag-of-words vector (each
+    token feature-hashed into a fixed 32-dim space, signed, L2-normalized)
+    -- not a real semantic embedding, but two lines sharing most of their
+    tokens (the same command with one changed argument, or a pure
+    whitespace difference) land close together in cosine distance while
+    unrelated lines don't. That's what ticket 16's similarity pre-check
+    needs to be exercisable in tests without a running Ollama."""
 
     def __init__(
         self,
@@ -111,13 +123,26 @@ class FakeLlmClient:
     ) -> None:
         self.interpret_response = interpret_response
         self.verify_result = verify_result
+        self.interpret_calls = 0
+        self.verify_calls = 0
 
     def interpret(self, prompt: str) -> str:
+        self.interpret_calls += 1
         return self.interpret_response
 
     def verify(self, claim: str, context: str) -> bool:
+        self.verify_calls += 1
         return self.verify_result
 
     def embed(self, text: str) -> list[float]:
-        digest = hashlib.sha256(text.encode("utf-8")).digest()
-        return [b / 255.0 for b in digest[:32]]
+        tokens = re.findall(r"[a-z0-9]+", text.lower()) or [text]
+        vector = [0.0] * _EMBED_DIMS
+        for token in tokens:
+            digest = hashlib.sha256(token.encode("utf-8")).digest()
+            index = digest[0] % _EMBED_DIMS
+            sign = 1.0 if digest[1] % 2 == 0 else -1.0
+            vector[index] += sign
+        norm = sum(v * v for v in vector) ** 0.5
+        if norm == 0:
+            return vector
+        return [v / norm for v in vector]
