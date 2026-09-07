@@ -16,9 +16,6 @@ export function ResultsScreen({
   onChat?: (deviceId: string) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
-  // CIS/NIST/DISA STIG are always real, evaluated options (never
-  // disabled/"coming soon") -- ISO is a distinct evidentiary view, added
-  // alongside them in the same selector rather than a fifth pass/fail table.
   const frameworkOptions = [...Object.keys(result.findings), ISO_FRAMEWORK];
   const [framework, setFramework] = useState(frameworkOptions[0]);
 
@@ -41,48 +38,59 @@ export function ResultsScreen({
     }
   }
 
+  const getSeverityBadgeClass = (severity: string) => {
+    const s = severity.toLowerCase();
+    if (s === "high") return "badge-high";
+    if (s === "medium") return "badge-medium";
+    if (s === "low") return "badge-low";
+    return "badge-dark";
+  };
+
   const findings = result.findings[framework];
 
   return (
     <div>
-      <h1>Compliance results</h1>
-      <section>
-        <h2>Device</h2>
-        {/* Cloud-native targets (e.g. AWS Security Groups) have no
-            model/serial/OS version -- resource_id/account/region substitute
-            for them instead, matching report.py's PDF identity section. */}
-        {result.identity.resource_id ||
-        result.identity.account ||
-        result.identity.region ? (
-          <>
-            <p>Resource ID: {result.identity.resource_id ?? "Unknown"}</p>
-            <p>Account: {result.identity.account ?? "Unknown"}</p>
-            <p>Region: {result.identity.region ?? "Unknown"}</p>
-          </>
-        ) : (
-          <>
-            <p>Model: {result.identity.model ?? "Unknown"}</p>
-            <p>Serial number: {result.identity.serial_number ?? "Unknown"}</p>
-            <p>OS version: {result.identity.os_version ?? "Unknown"}</p>
-          </>
-        )}
+      <div className="flex-between" style={{ marginBottom: 24, flexWrap: "wrap" }}>
+        <h1>Compliance results</h1>
+        <div style={{ minWidth: 220 }}>
+          <label htmlFor="framework-select">Framework</label>
+          <select
+            id="framework-select"
+            value={framework}
+            onChange={(e) => setFramework(e.target.value)}
+          >
+            {frameworkOptions.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <section className="card card-dark" style={{ marginBottom: 24 }}>
+        <h2 style={{ color: "#FFF", marginTop: 0 }}>Device Identity</h2>
+        <div className="grid-2">
+          {result.identity.resource_id ||
+          result.identity.account ||
+          result.identity.region ? (
+            <>
+              <p>Resource ID: {result.identity.resource_id ?? "Unknown"}</p>
+              <p>Account: {result.identity.account ?? "Unknown"}</p>
+              <p>Region: {result.identity.region ?? "Unknown"}</p>
+            </>
+          ) : (
+            <>
+              <p>Model: {result.identity.model ?? "Unknown"}</p>
+              <p>Serial number: {result.identity.serial_number ?? "Unknown"}</p>
+              <p>OS version: {result.identity.os_version ?? "Unknown"}</p>
+            </>
+          )}
+        </div>
       </section>
 
-      <label htmlFor="framework-select">Framework</label>
-      <select
-        id="framework-select"
-        value={framework}
-        onChange={(e) => setFramework(e.target.value)}
-      >
-        {frameworkOptions.map((name) => (
-          <option key={name} value={name}>
-            {name}
-          </option>
-        ))}
-      </select>
-
       {framework === ISO_FRAMEWORK ? (
-        <section>
+        <section className="card">
           <p>
             ISO/IEC 27001 Annex A controls are broad control objectives, not
             line-item technical checks -- each is supported by one or more
@@ -90,7 +98,7 @@ export function ResultsScreen({
             a pass/fail verdict on the control itself.
           </p>
           {result.iso_evidence.map((annex) => (
-            <div key={annex.control_id}>
+            <div key={annex.control_id} style={{ marginBottom: 24 }}>
               <h3>
                 {annex.control_id} — {annex.title}
               </h3>
@@ -106,7 +114,11 @@ export function ResultsScreen({
                   {annex.evidence.map((item) => (
                     <tr key={item.fact_id}>
                       <td>{item.title}</td>
-                      <td>{item.satisfied ? "Present" : "Gap"}</td>
+                      <td>
+                        <span className={`badge ${item.satisfied ? "badge-pass" : "badge-fail"}`}>
+                          {item.satisfied ? "Present" : "Gap"}
+                        </span>
+                      </td>
                       <td>{item.remediation ?? "-"}</td>
                     </tr>
                   ))}
@@ -116,7 +128,14 @@ export function ResultsScreen({
           ))}
         </section>
       ) : (
-        <section>
+        <section className="card">
+          <div className="flex-between" style={{ marginBottom: 16 }}>
+            <h2>{framework} Audit Verdict</h2>
+            <span className="badge badge-red" style={{ fontSize: "0.95rem", padding: "6px 14px" }}>
+              {findings.filter((f) => f.status === "pass").length} / {findings.length}{" "}
+              controls passed
+            </span>
+          </div>
           <p>
             {findings.filter((f) => f.status === "pass").length} / {findings.length}{" "}
             controls passed
@@ -134,10 +153,20 @@ export function ResultsScreen({
             <tbody>
               {findings.map((f) => (
                 <tr key={f.control_id}>
-                  <td>{f.control_id}</td>
+                  <td>
+                    <code>{f.control_id}</code>
+                  </td>
                   <td>{f.title}</td>
-                  <td>{f.severity}</td>
-                  <td>{f.status}</td>
+                  <td>
+                    <span className={`badge ${getSeverityBadgeClass(f.severity)}`}>
+                      {f.severity}
+                    </span>
+                  </td>
+                  <td>
+                    <span className={`badge ${f.status.toLowerCase() === "pass" ? "badge-pass" : "badge-fail"}`}>
+                      {f.status}
+                    </span>
+                  </td>
                   <td>{f.remediation ?? "-"}</td>
                 </tr>
               ))}
@@ -147,13 +176,17 @@ export function ResultsScreen({
       )}
 
       {error && <p role="alert">{error}</p>}
-      <button onClick={handleDownload}>Download PDF report</button>
-      {onChat && (
-        <button onClick={() => onChat(result.device_id)}>
-          Ask questions about this device
+      <div className="actions-row">
+        <button onClick={handleDownload} className="btn-primary">
+          Download PDF report
         </button>
-      )}
-      <button onClick={onUploadAnother}>Upload another device</button>
+        {onChat && (
+          <button onClick={() => onChat(result.device_id)} className="btn-dark">
+            Ask questions about this device
+          </button>
+        )}
+        <button onClick={onUploadAnother}>Upload another device</button>
+      </div>
     </div>
   );
 }

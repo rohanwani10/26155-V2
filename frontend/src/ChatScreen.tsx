@@ -59,35 +59,47 @@ export function ChatScreen({
 
   return (
     <div>
-      <h1>Ask about this device</h1>
-      <button onClick={onBack}>Back to results</button>
+      <div className="flex-between" style={{ marginBottom: 24 }}>
+        <h1>Ask about this device</h1>
+        <button onClick={onBack} className="btn-dark">
+          Back to results
+        </button>
+      </div>
 
       {!loaded ? (
-        <p>Loading chat history...</p>
+        <div className="card">
+          <p>Loading chat history...</p>
+        </div>
       ) : (
-        <section>
+        <section className="card">
           {history.length === 0 ? (
             <p>No questions asked yet.</p>
           ) : (
-            <ul>
+            <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 16 }}>
               {history.map((exchange, index) => (
-                <li key={index}>
-                  <p>
-                    <strong>Q:</strong> {exchange.question}
-                  </p>
-                  <p>
-                    <strong>A:</strong> {exchange.answer}
-                  </p>
-                  {exchange.citations.length > 0 && (
-                    <ul>
-                      {exchange.citations.map((citation) => (
-                        <li key={`${citation.framework}-${citation.control_id}`}>
-                          {citation.framework} {citation.control_id}: {citation.title} (
-                          {citation.status})
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                <li key={index} style={{ borderBottom: "1px solid var(--border-light)", paddingBottom: 16 }}>
+                  <div className="card card-red" style={{ padding: "12px 18px", marginBottom: 10, borderRadius: "16px" }}>
+                    <p style={{ margin: 0, fontWeight: 700, color: "#FFF" }}>
+                      <strong>Q:</strong> {exchange.question}
+                    </p>
+                  </div>
+                  <div className="card card-dark" style={{ padding: "16px 20px", borderRadius: "16px" }}>
+                    <p style={{ margin: 0, color: "#FFF" }}>
+                      <strong>A:</strong> {exchange.answer}
+                    </p>
+                    {exchange.citations.length > 0 && (
+                      <ul style={{ marginTop: 12, paddingLeft: 20, color: "var(--text-light-muted)" }}>
+                        {exchange.citations.map((citation) => (
+                          <li key={`${citation.framework}-${citation.control_id}`}>
+                            <span className="badge badge-red" style={{ marginRight: 6 }}>
+                              {citation.framework} {citation.control_id}
+                            </span>
+                            {citation.title} ({citation.status})
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>
@@ -95,7 +107,7 @@ export function ChatScreen({
         </section>
       )}
 
-      <form onSubmit={handleSend}>
+      <form onSubmit={handleSend} className="card" style={{ maxWidth: "100%" }}>
         <label>
           Question
           <input
@@ -106,7 +118,7 @@ export function ChatScreen({
           />
         </label>
         {error && <p role="alert">{error}</p>}
-        <button type="submit" disabled={sending}>
+        <button type="submit" disabled={sending} className="btn-primary">
           {sending ? "Asking..." : "Ask"}
         </button>
       </form>

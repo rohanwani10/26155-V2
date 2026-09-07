@@ -40,15 +40,23 @@ export function UploadScreen({
   }
 
   return (
-    <div>
-      <h1>Upload a device</h1>
-      <form onSubmit={handleSubmit}>
+    <div className="card">
+      <div style={{ marginBottom: 24 }}>
+        <h1>Upload a device</h1>
+        <p>Evaluate Cisco, Juniper, AWS, or custom vendor configurations against security standards.</p>
+      </div>
+      <form onSubmit={handleSubmit} style={{ maxWidth: 540 }}>
         <label>
           Running-config file
           <input
             type="file"
             onChange={(e) => setConfig(e.target.files?.[0] ?? null)}
           />
+          {config && (
+            <span className="badge badge-red" style={{ marginTop: 4, width: "fit-content" }}>
+              Selected: {config.name}
+            </span>
+          )}
         </label>
         <label>
           Version / hardware info file
@@ -56,10 +64,14 @@ export function UploadScreen({
             type="file"
             onChange={(e) => setVersionInfo(e.target.files?.[0] ?? null)}
           />
+          {versionInfo && (
+            <span className="badge badge-red" style={{ marginTop: 4, width: "fit-content" }}>
+              Selected: {versionInfo.name}
+            </span>
+          )}
         </label>
         <label>
-          Vendor hint (optional -- only needed if this vendor isn't
-          recognized automatically)
+          Vendor hint (optional -- only needed if this vendor isn't recognized automatically)
           <input
             type="text"
             value={vendorHint}
@@ -68,7 +80,7 @@ export function UploadScreen({
           />
         </label>
         {error && <p role="alert">{error}</p>}
-        <button type="submit" disabled={submitting}>
+        <button type="submit" disabled={submitting} className="btn-primary">
           {submitting ? "Evaluating..." : "Evaluate device"}
         </button>
       </form>

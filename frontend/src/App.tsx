@@ -3,6 +3,7 @@ import { getDevice, getMe, getSetupStatus, logout } from "./api";
 import { BulkUploadScreen } from "./BulkUploadScreen";
 import { ChatScreen } from "./ChatScreen";
 import { FleetDashboardScreen } from "./FleetDashboardScreen";
+import { LandingScreen } from "./LandingScreen";
 import { LoginScreen } from "./LoginScreen";
 import { Nav, type NavTarget } from "./Nav";
 import { ResultsScreen } from "./ResultsScreen";
@@ -14,6 +15,7 @@ import { UploadScreen } from "./UploadScreen";
 type Screen =
   | { name: "loading" }
   | { name: "setup" }
+  | { name: "landing" }
   | { name: "login" }
   | { name: "upload" }
   | { name: "bulk-upload" }
@@ -22,9 +24,6 @@ type Screen =
   | { name: "results"; result: UploadResult }
   | { name: "chat"; deviceId: string };
 
-// Screens that show the persistent nav bar and highlight themselves in it --
-// "results" and "chat" are reached by drilling into a specific device, not
-// directly from the nav, so they show the nav unhighlighted.
 const NAV_TARGETS: Record<string, NavTarget> = {
   upload: "upload",
   "bulk-upload": "bulk-upload",
@@ -62,6 +61,9 @@ export default function App() {
 
   function navigate(target: NavTarget) {
     switch (target) {
+      case "landing":
+        setScreen({ name: "landing" });
+        break;
       case "upload":
         setScreen({ name: "upload" });
         break;
@@ -78,9 +80,6 @@ export default function App() {
   }
 
   function viewDevice(deviceId: string) {
-    // Bulk upload / fleet dashboard only return summary data -- fetch the
-    // full record (findings, iso_evidence, identity) to reuse ResultsScreen
-    // exactly as the single-upload flow does.
     getDevice(deviceId)
       .then((result) => setScreen({ name: "results", result }))
       .catch(() => goToLogin());
@@ -98,8 +97,15 @@ export default function App() {
       return null;
     case "setup":
       return <SetupScreen onDone={goToLogin} />;
+    case "landing":
+      return <LandingScreen onGoToLogin={goToLogin} />;
     case "login":
-      return <LoginScreen onLoggedIn={() => setScreen({ name: "upload" })} />;
+      return (
+        <LoginScreen
+          onLoggedIn={() => setScreen({ name: "upload" })}
+          onBackToLanding={() => setScreen({ name: "landing" })}
+        />
+      );
     case "upload":
       return withNav(
         <UploadScreen

@@ -31,38 +31,93 @@ export function FleetDashboardScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const getSeverityBadgeClass = (severity: string) => {
+    const s = severity.toLowerCase();
+    if (s === "high") return "badge-high";
+    if (s === "medium") return "badge-medium";
+    if (s === "low") return "badge-low";
+    return "badge-dark";
+  };
+
   if (error) return <p role="alert">{error}</p>;
-  if (!summary) return <p>Loading fleet summary...</p>;
+  if (!summary) return <p style={{ padding: 24 }}>Loading fleet summary...</p>;
 
   return (
     <div>
-      <h1>Fleet dashboard</h1>
-      <p>{summary.device_count} device(s) evaluated</p>
+      <div className="flex-between" style={{ marginBottom: 24, flexWrap: "wrap" }}>
+        <div>
+          <h1>Fleet dashboard</h1>
+          <p style={{ fontSize: "1.1rem" }}>
+            <span className="badge badge-dark" style={{ fontSize: "0.9rem", padding: "6px 14px" }}>
+              {summary.device_count} device(s) evaluated
+            </span>
+          </p>
+        </div>
+
+        {summary.device_count > 0 && (
+          <div style={{ minWidth: 220 }}>
+            <label htmlFor="fleet-framework-select">Framework</label>
+            <select
+              id="fleet-framework-select"
+              value={framework ?? ""}
+              onChange={(e) => setFramework(e.target.value)}
+            >
+              {Object.keys(summary.frameworks).map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
 
       {summary.device_count === 0 ? (
-        <p>No devices uploaded yet.</p>
+        <div className="card">
+          <p>No devices uploaded yet.</p>
+        </div>
       ) : (
         <>
-          <label htmlFor="fleet-framework-select">Framework</label>
-          <select
-            id="fleet-framework-select"
-            value={framework ?? ""}
-            onChange={(e) => setFramework(e.target.value)}
-          >
-            {Object.keys(summary.frameworks).map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
+          {framework && (
+            <div className="grid-2" style={{ marginBottom: 24 }}>
+              <div className="card card-red">
+                <span className="badge badge-dark" style={{ marginBottom: 12 }}>
+                  Selected Standard
+                </span>
+                <h2 style={{ marginTop: 0, fontSize: "1.8rem" }}>{framework} Fleet Overview</h2>
+                <p style={{ fontWeight: 600, fontSize: "1.05rem" }}>
+                  {summary.frameworks[framework].total_pass_count} passed /{" "}
+                  {summary.frameworks[framework].total_fail_count} failed across the fleet
+                </p>
+              </div>
+
+              <div className="card card-dark">
+                <span className="badge badge-red" style={{ marginBottom: 12 }}>
+                  Compliance Health
+                </span>
+                <h3 style={{ marginTop: 0, fontSize: "1.4rem", color: "#FFF" }}>
+                  {summary.frameworks[framework].total_pass_count + summary.frameworks[framework].total_fail_count > 0
+                    ? Math.round(
+                        (summary.frameworks[framework].total_pass_count /
+                          (summary.frameworks[framework].total_pass_count +
+                            summary.frameworks[framework].total_fail_count)) *
+                          100,
+                      )
+                    : 0}% Compliance Pass Rate
+                </h3>
+                <p style={{ color: "var(--text-light-muted)" }}>
+                  Monitoring real-time compliance posture across all connected fleet assets.
+                </p>
+              </div>
+            </div>
+          )}
 
           {framework && (
-            <section>
+            <section className="card">
               <h2>{framework} fleet totals</h2>
               <p>
                 {summary.frameworks[framework].total_pass_count} passed /{" "}
-                {summary.frameworks[framework].total_fail_count} failed across
-                the fleet
+                {summary.frameworks[framework].total_fail_count} failed across the fleet
               </p>
               <h3>Most common failures</h3>
               {summary.frameworks[framework].most_common_failures.length === 0 ? (
@@ -80,10 +135,18 @@ export function FleetDashboardScreen({
                   <tbody>
                     {summary.frameworks[framework].most_common_failures.map((f) => (
                       <tr key={f.control_id}>
-                        <td>{f.control_id}</td>
+                        <td>
+                          <code>{f.control_id}</code>
+                        </td>
                         <td>{f.title}</td>
-                        <td>{f.severity}</td>
-                        <td>{f.fail_count}</td>
+                        <td>
+                          <span className={`badge ${getSeverityBadgeClass(f.severity)}`}>
+                            {f.severity}
+                          </span>
+                        </td>
+                        <td>
+                          <span className="badge badge-fail">{f.fail_count} failing</span>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -92,7 +155,7 @@ export function FleetDashboardScreen({
             </section>
           )}
 
-          <section>
+          <section className="card">
             <h2>Devices</h2>
             <table>
               <thead>
@@ -104,25 +167,33 @@ export function FleetDashboardScreen({
                       <th>{framework} fail</th>
                     </>
                   )}
-                  <th></th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {summary.devices.map((device) => (
                   <tr key={device.device_id}>
-                    <td>
+                    <td style={{ fontWeight: 600 }}>
                       {device.identity?.model ??
                         device.identity?.resource_id ??
                         device.device_id}
                     </td>
                     {framework && (
                       <>
-                        <td>{device.pass_counts[framework] ?? 0}</td>
-                        <td>{device.fail_counts[framework] ?? 0}</td>
+                        <td>
+                          <span className="badge badge-pass">
+                            {device.pass_counts[framework] ?? 0}
+                          </span>
+                        </td>
+                        <td>
+                          <span className="badge badge-fail">
+                            {device.fail_counts[framework] ?? 0}
+                          </span>
+                        </td>
                       </>
                     )}
                     <td>
-                      <button onClick={() => onViewDevice(device.device_id)}>
+                      <button onClick={() => onViewDevice(device.device_id)} className="btn-dark">
                         View results
                       </button>
                     </td>

@@ -112,32 +112,34 @@ export function TrainingScreen({ onAuthExpired }: { onAuthExpired: () => void })
 
   return (
     <div>
-      <h1>Vendor training</h1>
-      <p>
-        Upload an unrecognized vendor's config with a vendor hint (see the
-        Upload screen) to queue its unrecognized lines here, then map each
-        one to a security category. Confirmed mappings become permanent,
-        reusable rules for that vendor -- future uploads evaluate them
-        automatically.
-      </p>
-      <form onSubmit={loadQueue}>
-        <label>
-          Vendor
-          <input
-            type="text"
-            value={vendor}
-            onChange={(e) => setVendor(e.target.value)}
-            placeholder="e.g. acme_widgetos"
-          />
-        </label>
-        {error && <p role="alert">{error}</p>}
-        <button type="submit" disabled={loading}>
-          {loading ? "Loading..." : "Load queue"}
-        </button>
-      </form>
+      <div className="card">
+        <h1>Vendor training</h1>
+        <p>
+          Upload an unrecognized vendor's config with a vendor hint (see the
+          Upload screen) to queue its unrecognized lines here, then map each
+          one to a security category. Confirmed mappings become permanent,
+          reusable rules for that vendor -- future uploads evaluate them
+          automatically.
+        </p>
+        <form onSubmit={loadQueue} style={{ maxWidth: 440 }}>
+          <label>
+            Vendor
+            <input
+              type="text"
+              value={vendor}
+              onChange={(e) => setVendor(e.target.value)}
+              placeholder="e.g. acme_widgetos"
+            />
+          </label>
+          {error && <p role="alert">{error}</p>}
+          <button type="submit" disabled={loading} className="btn-primary">
+            {loading ? "Loading..." : "Load queue"}
+          </button>
+        </form>
+      </div>
 
       {lines && (
-        <section>
+        <section className="card">
           <h2>Unrecognized lines for '{vendor.trim()}'</h2>
           {lines.length === 0 ? (
             <p>Nothing queued for this vendor.</p>
@@ -149,7 +151,7 @@ export function TrainingScreen({ onAuthExpired }: { onAuthExpired: () => void })
                   <th>Suggestion</th>
                   <th>fact_id</th>
                   <th>Value</th>
-                  <th></th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -162,23 +164,24 @@ export function TrainingScreen({ onAuthExpired }: { onAuthExpired: () => void })
                       </td>
                       <td>
                         {state.suggestion ? (
-                          <>
-                            <p>
-                              {state.suggestion.fact_id ?? "(unparseable)"} ={" "}
-                              {String(state.suggestion.value)}
-                              {" "}
+                          <div style={{ fontSize: "0.88rem" }}>
+                            <p style={{ margin: 0, fontWeight: 700 }}>
+                              <span className="badge badge-yellow">
+                                {state.suggestion.fact_id ?? "(unparseable)"} = {String(state.suggestion.value)}
+                              </span>{" "}
                               {state.suggestion.verified ? "(verified)" : "(unverified)"}
                             </p>
-                            {state.suggestion.rationale && <p>{state.suggestion.rationale}</p>}
+                            {state.suggestion.rationale && <p style={{ margin: "4px 0 0 0" }}>{state.suggestion.rationale}</p>}
                             {state.suggestion.doc_enrichment_used && (
-                              <p>Improved using fetched vendor documentation.</p>
+                              <p style={{ margin: "4px 0 0 0", color: "var(--text-muted)" }}>Improved using fetched vendor documentation.</p>
                             )}
                             {state.suggestion.error && <p role="alert">{state.suggestion.error}</p>}
-                          </>
+                          </div>
                         ) : (
                           <button
                             onClick={() => handleGetSuggestion(line)}
                             disabled={state.suggestionLoading}
+                            className="btn-dark"
                           >
                             {state.suggestionLoading ? "Asking..." : "Get AI suggestion"}
                           </button>
@@ -194,17 +197,20 @@ export function TrainingScreen({ onAuthExpired }: { onAuthExpired: () => void })
                         />
                       </td>
                       <td>
-                        <label>
+                        <label style={{ flexDirection: "row", alignItems: "center" }}>
                           <input
                             type="checkbox"
                             checked={state.value}
                             onChange={(e) => updateLine(line, { value: e.target.checked })}
+                            style={{ width: "auto", cursor: "pointer" }}
                           />
                           true
                         </label>
                       </td>
                       <td>
-                        <button onClick={() => handleConfirm(line)}>Confirm mapping</button>
+                        <button onClick={() => handleConfirm(line)} className="btn-primary">
+                          Confirm mapping
+                        </button>
                       </td>
                     </tr>
                   );

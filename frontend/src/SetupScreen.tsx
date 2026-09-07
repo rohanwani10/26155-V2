@@ -28,7 +28,7 @@ export function SetupScreen({ onDone }: { onDone: () => void }) {
 
   if (recoveryKey) {
     return (
-      <div>
+      <div style={{ maxWidth: 540, margin: "40px auto" }} className="card card-yellow">
         <h1>Save your recovery key</h1>
         <p>
           This is the only time this key will be shown. Store it somewhere
@@ -36,16 +36,21 @@ export function SetupScreen({ onDone }: { onDone: () => void }) {
           master password.
         </p>
         <pre data-testid="recovery-key">{recoveryKey}</pre>
-        <button onClick={onDone}>I've saved it, continue to login</button>
+        <button onClick={onDone} className="btn-dark" style={{ width: "100%", marginTop: 16 }}>
+          I've saved it, continue to login
+        </button>
       </div>
     );
   }
 
   return (
-    <div>
-      <h1>Set up your admin account</h1>
-      <form onSubmit={handleSubmit}>
-        <label>
+    <div style={{ maxWidth: 440, margin: "40px auto" }} className="card card-dark">
+      <h1 style={{ color: "#FFF" }}>Set up your admin account</h1>
+      <p style={{ color: "var(--text-light-muted)" }}>
+        Initialize master encryption and security credentials
+      </p>
+      <form onSubmit={handleSubmit} style={{ maxWidth: "100%" }}>
+        <label style={{ color: "#FFF" }}>
           Master password
           <input
             type="password"
@@ -53,7 +58,7 @@ export function SetupScreen({ onDone }: { onDone: () => void }) {
             onChange={(e) => setPassword(e.target.value)}
           />
         </label>
-        <label>
+        <label style={{ color: "#FFF" }}>
           Confirm password
           <input
             type="password"
@@ -62,7 +67,9 @@ export function SetupScreen({ onDone }: { onDone: () => void }) {
           />
         </label>
         {error && <p role="alert">{error}</p>}
-        <button type="submit">Create account</button>
+        <button type="submit" className="btn-primary" style={{ width: "100%", marginTop: 8 }}>
+          Create account
+        </button>
       </form>
     </div>
   );
