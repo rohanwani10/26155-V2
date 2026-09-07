@@ -1,6 +1,8 @@
 """Upload -> parse -> evaluate -> report, for one or many Cisco IOS devices."""
 
 import dataclasses
+import io
+import zipfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -21,6 +23,17 @@ class DeviceUploadError(Exception):
     """Raised when one device's config/version pair can't be processed.
     Caught per-device in the bulk endpoint so one bad upload never blocks the
     rest of the batch."""
+
+
+# A ZIP-of-configs upload (see upload_devices_bulk_zip below) has no separate
+# per-file version/identity file -- just a non-empty placeholder so
+# _process_device_upload's "is this file empty" guard doesn't reject it. It
+# deliberately contains none of the substrings any registered vendor's
+# detect() looks for ("cisco", "junos", ...), so every zip entry falls
+# through to the same unrecognized-vendor degradation path already used for
+# any other unidentifiable upload (queued for training, identity fields
+# None) -- not a new failure mode, the existing one.
+_ZIP_ENTRY_NO_VERSION_INFO = "no version info: extracted from zip archive"
 
 
 def _process_device_upload(
@@ -198,6 +211,73 @@ def build_devices_router(
                 )
             except DeviceUploadError as exc:
                 results.append({"error": str(exc), "config_filename": config.filename})
+
+        return {"results": results}
+
+    # A separate endpoint rather than extending upload_devices_bulk above:
+    # that endpoint's configs/version_infos are both required, positionally-
+    # paired lists, and the empty-batch test (test_bulk_upload_rejects_empty_batch)
+    # relies on FastAPI's own required-field validation rejecting a request
+    # with neither field with 422 before the handler runs. Making either
+    # field optional to also allow a zip-only request would change that
+    # endpoint's already-tested contract; a new endpoint changes none of it.
+    #
+    # Each file in the zip is one device, run through the exact same
+    # _process_device_upload pipeline (so the exact same redaction/
+    # encryption/vendor-detection path every other upload goes through) --
+    # no separate per-file version/identity file, so _ZIP_ENTRY_NO_VERSION_INFO
+    # stands in for it and every entry degrades through the unrecognized-
+    # vendor path unless its config content alone is enough to identify it
+    # (e.g. AWS Security Group JSON, whose detect() only looks at the config).
+    @router.post("/api/devices/bulk/zip")
+    def upload_devices_bulk_zip(
+        zip_file: UploadFile = File(...),
+        vendor_hint: str | None = Form(default=None),
+        data_key: bytes = Depends(require_session),
+    ) -> dict[str, Any]:
+        raw_zip = zip_file.file.read()
+        try:
+            archive = zipfile.ZipFile(io.BytesIO(raw_zip))
+        except zipfile.BadZipFile:
+            raise HTTPException(
+                status_code=400, detail="Uploaded file is not a valid ZIP archive"
+            )
+
+        entry_names = [
+            info.filename for info in archive.infolist() if not info.is_dir()
+        ]
+        if not entry_names:
+            raise HTTPException(
+                status_code=400, detail="ZIP archive contains no files"
+            )
+
+        results: list[dict[str, Any]] = []
+        for name in entry_names:
+            try:
+                raw_bytes = archive.read(name)
+            except (zipfile.BadZipFile, RuntimeError, NotImplementedError) as exc:
+                # Bad CRC, an encrypted entry needing a password, or an
+                # unsupported compression method -- one bad entry, isolated
+                # the same way one bad device is isolated in the matched-pair
+                # bulk endpoint above, never taking down the rest of the zip.
+                results.append({"error": str(exc), "config_filename": name})
+                continue
+
+            raw_config = raw_bytes.decode("utf-8", errors="replace")
+            try:
+                results.append(
+                    _process_device_upload(
+                        raw_config,
+                        _ZIP_ENTRY_NO_VERSION_INFO,
+                        vendor_hint,
+                        data_key,
+                        store,
+                        queue_store,
+                        rule_store,
+                    )
+                )
+            except DeviceUploadError as exc:
+                results.append({"error": str(exc), "config_filename": name})
 
         return {"results": results}
 
