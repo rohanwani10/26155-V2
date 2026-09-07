@@ -23,6 +23,19 @@ every request, fetch or no fetch, so it keeps paying off offline too. When
 there's nothing to fetch or nothing promoted yet, every added value is
 falsy/empty and the prompt built is byte-identical to ticket 09's original --
 so the offline case is unchanged, exactly as the ticket requires.
+
+Ticket 16 adds an embedding-similarity pre-check *ahead of everything else in
+this file*, including the ticket 11 enrichment above: before any LLM call,
+embed the queued line and query TrainingMappingStore (training_mapping_
+store.py) -- a dedicated Chroma collection of previously-*confirmed*
+mappings, scoped to this vendor -- for a close match. A close match returns
+that confirmed mapping's fact_id/value directly, with no LLM call at all
+(neither the propose/verify pass below nor ticket 11's doc-enrichment pass,
+which itself calls the LLM). No close match falls through to the rest of
+this file completely unchanged. The admin still confirms every suggestion
+this file returns -- embedding-matched or LLM-derived -- via the existing
+POST /api/training/mappings; this ticket only changes how the *suggestion*
+is produced.
 """
 
 import re
@@ -36,6 +49,7 @@ from .doc_fetcher import DocFetcher, urls_for_vendor
 from .llm import LlmClient
 from .rules import CIS_CONTROLS
 from .training import FACT_IDS, TrainingRuleStore
+from .training_mapping_store import TrainingMappingStore
 from .vendor_knowledge_store import VendorKnowledgeStore
 
 # How much of a fetched doc page to ground the extraction prompt in -- a
@@ -198,6 +212,7 @@ def build_training_suggestions_router(
     llm_client: LlmClient,
     doc_fetcher: DocFetcher,
     knowledge_store: VendorKnowledgeStore,
+    mapping_store: TrainingMappingStore,
 ) -> APIRouter:
     router = APIRouter()
 
@@ -206,6 +221,28 @@ def build_training_suggestions_router(
         vendor: str, line: str, data_key: bytes = Depends(require_session)
     ) -> dict[str, Any]:
         line = line.strip()
+
+        # Ticket 16: embedding-similarity pre-check, ahead of everything
+        # else including ticket 11's doc enrichment below -- both of those
+        # call the LLM, this doesn't. A close match to a previously
+        # confirmed mapping (this vendor only) is returned directly.
+        close_match = mapping_store.find_close_match(vendor, line)
+        if close_match is not None:
+            return {
+                "vendor": vendor,
+                "line": line,
+                "fact_id": close_match["fact_id"],
+                "value": close_match["value"],
+                "rationale": (
+                    "Matched a previously confirmed mapping for "
+                    f"{close_match['line']!r} (embedding similarity "
+                    f"{close_match['similarity']:.2f})."
+                ),
+                "verified": True,
+                "error": None,
+                "doc_enrichment_used": False,
+            }
+
         existing_rules = rule_store.list_for_vendor(
             vendor, decrypt=Fernet(data_key).decrypt
         )

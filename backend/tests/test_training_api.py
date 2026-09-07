@@ -7,13 +7,17 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from app.llm import FakeLlmClient
 from app.main import create_app
 from app.rules import CIS_CONTROLS
 
 
 @pytest.fixture
 def authed_client(tmp_path):
-    app = create_app(tmp_path)
+    # ticket 16: confirming a mapping now embeds it (TrainingMappingStore),
+    # so this fixture -- like every other AI-touching one in this suite --
+    # injects the fake client rather than defaulting to a real Ollama call.
+    app = create_app(tmp_path, llm_client=FakeLlmClient())
     client = TestClient(app)
     client.post("/api/setup", json={"password": "correct horse battery staple"})
     client.post("/api/login", json={"credential": "correct horse battery staple"})
