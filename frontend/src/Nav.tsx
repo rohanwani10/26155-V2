@@ -1,9 +1,10 @@
-export type NavTarget = "landing" | "upload" | "bulk-upload" | "fleet" | "training";
+export type NavTarget = "landing" | "upload" | "bulk-upload" | "fleet" | "training" | "network-health";
 
 const LINKS: { target: NavTarget; label: string }[] = [
   { target: "upload", label: "Upload device" },
   { target: "bulk-upload", label: "Bulk upload" },
   { target: "fleet", label: "Fleet dashboard" },
+  { target: "network-health", label: "Network Health" },
   { target: "training", label: "Vendor training" },
 ];
 
@@ -17,7 +18,7 @@ export function Nav({
   onLogout: () => void;
 }) {
   return (
-    <nav>
+    <nav className="landing-nav">
       <div className="nav-brand" onClick={() => onNavigate("landing")}>
         <span className="nav-brand-logo">U</span>
         <span>UniConfig</span>

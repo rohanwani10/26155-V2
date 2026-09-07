@@ -1,0 +1,4 @@
+Acme WidgetOS Version 10.4.1 (Build 2026-SR2)
+Hardware: Acme-W8000 Security Gateway Appliance
+Serial Number: ACME-9918237-X1
+Memory: 16384 MB

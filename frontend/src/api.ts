@@ -130,3 +130,69 @@ export function sendChatMessage(deviceId: string, question: string) {
 export function getChatHistory(deviceId: string) {
   return request<ChatHistoryResponse>(`/api/devices/${deviceId}/chat`);
 }
+
+export function getNetworkHealthStatus() {
+  return request<{
+    mode: string;
+    active_interface: string;
+    links: Array<{
+      link_id: string;
+      name: string;
+      interface: string;
+      status: string;
+      bandwidth_usage_pct: number;
+      throughput_mbps?: number;
+      latency_ms: number;
+      packet_loss_pct: number;
+      jitter_ms: number;
+      health_score: number;
+    }>;
+    alerts: Array<{
+      alert_id: string;
+      link_id: string;
+      severity: string;
+      title: string;
+      description: string;
+    }>;
+    recommendations: Array<{
+      recommendation_id: string;
+      trigger_reason: string;
+      action_title: string;
+      source_link: string;
+      target_link: string;
+      advisory_details: string;
+      remediation_cli: string;
+    }>;
+    simulated_spike: string | null;
+  }>("/api/network-health/status");
+}
+
+export function setNetworkHealthMode(mode: string) {
+  return request<{
+    mode: string;
+    active_interface: string;
+    links: any[];
+    alerts: any[];
+    recommendations: any[];
+    simulated_spike: string | null;
+  }>("/api/network-health/mode", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode }),
+  });
+}
+
+export function simulateNetworkEvent(linkId?: string | null) {
+  return request<{
+    mode: string;
+    active_interface: string;
+    links: any[];
+    alerts: any[];
+    recommendations: any[];
+    simulated_spike: string | null;
+  }>("/api/network-health/simulate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ link_id: linkId ?? null }),
+  });
+}

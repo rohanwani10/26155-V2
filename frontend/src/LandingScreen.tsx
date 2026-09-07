@@ -15,7 +15,7 @@ export function LandingScreen({
   return (
     <div>
       {/* Landing Navbar */}
-      <nav>
+      <nav className="landing-nav">
         <div className="nav-brand" onClick={onGoToLogin}>
           <span className="nav-brand-logo">U</span>
           <span>UniConfig</span>
@@ -23,6 +23,9 @@ export function LandingScreen({
         <div className="nav-links">
           <a href="#features" className="btn" style={{ background: "transparent" }}>
             Features
+          </a>
+          <a href="#telemetry" className="btn" style={{ background: "transparent" }}>
+            Live Telemetry
           </a>
           <a href="#demo" className="btn" style={{ background: "transparent" }}>
             Interactive Demo
@@ -44,16 +47,16 @@ export function LandingScreen({
         <span className="badge badge-red" style={{ marginBottom: 16 }}>
           SIH 2026 Problem Statement SIH26155 • NTRO
         </span>
-        <h1>Unified Configuration Platform for Every Network</h1>
+        <h1>Unified Configuration & Real-Time Network Health Platform</h1>
         <p>
-          AI-driven multi-vendor security compliance auditor. UniConfig normalizes Cisco,
-          Juniper, Fortinet, AWS, and legacy network CLI configurations into a single baseline,
-          evaluating them against CIS Benchmarks, NIST SP 800-53, DISA STIGs, and ISO 27001.
+          AI-driven multi-vendor security compliance auditor & live network health monitor. UniConfig normalizes Cisco,
+          Juniper, Fortinet, AWS, and legacy CLI configurations into one baseline, evaluating them against CIS Benchmarks,
+          NIST SP 800-53, DISA STIGs, and ISO 27001 while streaming real-time network telemetry.
         </p>
 
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
           <button onClick={onGoToLogin} className="btn-red" style={{ padding: "12px 28px", fontSize: "1rem" }}>
-            Launch System
+            Launch Console
           </button>
           <a href="#demo" className="btn-dark" style={{ padding: "12px 24px", fontSize: "1rem" }}>
             Explore Interactive Demo
@@ -86,7 +89,7 @@ export function LandingScreen({
           Core Capabilities
         </span>
         <h2>Why Enterprise & Government Defense Teams Choose UniConfig</h2>
-        <p>Turning multi-vendor CLI complexity into structured compliance clarity.</p>
+        <p>Turning multi-vendor CLI complexity and real-time network health into actionable clarity.</p>
 
         <div className="grid-3" style={{ marginTop: 24 }}>
           <div className="card" style={{ background: "var(--light-bg)" }}>
@@ -142,11 +145,38 @@ export function LandingScreen({
 
           <div className="card" style={{ background: "var(--light-bg)" }}>
             <span className="badge badge-dark" style={{ marginBottom: 8 }}>
-              06 • Zero Hallucinations
+              06 • Live Telemetry
             </span>
-            <h3 style={{ marginTop: 4 }}>LLM Grounding & Validation</h3>
+            <h3 style={{ marginTop: 4 }}>Live Network & Wi-Fi Streaming</h3>
             <p>
-              All AI suggestions undergo strict schema validation and vendor documentation verification to ensure 100% audit accuracy.
+              Streams live throughput (Mbps), RTT ping latency (ms), and packet loss directly from your active network connection with local AI link advisory.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Network Health Feature Section */}
+      <section id="telemetry" className="card card-dark">
+        <span className="badge badge-red" style={{ marginBottom: 12 }}>
+          Live Telemetry & Link Advisory
+        </span>
+        <h2 style={{ color: "#FFF", marginTop: 0 }}>Real-Time Multi-WAN & Wi-Fi Health Monitoring</h2>
+        <p style={{ color: "var(--text-light-muted)" }}>
+          Monitors live bandwidth utilization, latency spikes, and packet loss, utilizing local AI anomaly detection to trigger automated router failover scripts.
+        </p>
+
+        <div className="grid-2" style={{ marginTop: 20 }}>
+          <div style={{ background: "var(--dark-surface)", padding: 20, borderRadius: "16px", border: "1px solid var(--border-dark)" }}>
+            <h3 style={{ color: "#FFF", marginTop: 0 }}>📡 Live Laptop Network Mode</h3>
+            <p style={{ color: "var(--text-light-muted)", fontSize: "0.92rem" }}>
+              Collects real live telemetry directly from your active Wi-Fi / Ethernet adapter. Test network speed and ping latency live during presentations!
+            </p>
+          </div>
+
+          <div style={{ background: "var(--dark-surface)", padding: 20, borderRadius: "16px", border: "1px solid var(--border-dark)" }}>
+            <h3 style={{ color: "#FFF", marginTop: 0 }}>🌐 Multi-WAN Simulation Mode</h3>
+            <p style={{ color: "var(--text-light-muted)", fontSize: "0.92rem" }}>
+              Simulates multi-link WAN traffic (Primary Fiber, Backup 5G/LTE, Satellite) to test automated AI traffic rerouting and router failover scripts.
             </p>
           </div>
         </div>
@@ -183,7 +213,7 @@ export function LandingScreen({
             className={`tutorial-step-btn ${activeStep === 4 ? "active" : ""}`}
             onClick={() => setActiveStep(4)}
           >
-            4. CLI Remediation & Reports
+            4. Live Telemetry & CLI Fixes
           </button>
         </div>
 
@@ -242,15 +272,15 @@ export function LandingScreen({
           {activeStep === 4 && (
             <div>
               <span className="badge badge-red" style={{ marginBottom: 8 }}>Step 4</span>
-              <h3 style={{ color: "#FFF", marginTop: 4 }}>Automated CLI Remediation & PDF Export</h3>
+              <h3 style={{ color: "#FFF", marginTop: 4 }}>Live Telemetry & CLI Failover Fixes</h3>
               <p style={{ color: "var(--text-light-muted)" }}>
-                UniConfig generates ready-to-run vendor CLI commands to fix failed controls and compiles an executive PDF audit report.
+                Streams live network throughput & latency, generating automated router CLI failover commands and exportable PDF audit reports.
               </p>
               <pre>
-                {`[Remediation Script Generated]
+                {`[Live Telemetry & Failover Script]
+Interface: Wi-Fi (Live RTT: 18.2ms | Throughput: 14.5 Mbps)
 configure terminal
-  ip ssh version 2
-  crypto key generate rsa modulus 2048
+  ip route 0.0.0.0 0.0.0.0 192.168.2.1 10 track 1
 end
 write memory`}
               </pre>
@@ -297,7 +327,7 @@ write memory`}
                 <li>Unlimited devices & vendors</li>
                 <li>100% Air-Gapped Local LLM RAG</li>
                 <li>CIS, NIST, DISA STIG & ISO 27001</li>
-                <li>Custom Vendor Parser Training</li>
+                <li>Live Multi-WAN Telemetry & Advisory</li>
                 <li>24/7 Priority AMC Support</li>
               </ul>
             </div>
@@ -373,12 +403,12 @@ write memory`}
 
           <div className="faq-item">
             <div className="faq-question" onClick={() => toggleFaq(3)}>
-              <span>How does UniConfig prevent AI hallucinations during audits?</span>
+              <span>How does UniConfig collect real-time network health telemetry?</span>
               <span>{openFaq === 3 ? "−" : "+"}</span>
             </div>
             {openFaq === 3 && (
               <div className="faq-answer">
-                UniConfig grounds all AI outputs using a RAG (Retrieval-Augmented Generation) vector architecture combined with a deterministic schema validator. Suggested mappings are verified against official vendor documentation before final presentation.
+                UniConfig streams real-time telemetry (throughput Mbps, RTT ping latency, packet loss) directly from active local network interfaces (Wi-Fi/Ethernet) and supports multi-WAN link aggregation with local AI traffic failover advisory.
               </div>
             )}
           </div>

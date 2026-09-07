@@ -1,0 +1,6 @@
+set system login-banner "Unauthorized access strictly prohibited"
+set service ssh-version 2
+enable secret 5 $1$mERr$61763g.h3.3
+set firewall stealth-mode enable
+set logging remote-syslog 192.168.1.50
+set aaa radius-server 10.0.0.5 key SecretRadiusPass
