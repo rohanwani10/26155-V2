@@ -1,4 +1,5 @@
-"""Unknown-vendor training loop (ticket 08, no AI involved).
+"""Unknown-vendor training loop (ticket 08; matching itself is still no AI
+involved).
 
 An upload from a vendor the registry doesn't recognize (see vendors.py)
 doesn't fail: instead, every non-blank/non-comment line of the (already
@@ -10,6 +11,14 @@ and clears the now-covered line from the queue -- future uploads from that
 vendor evaluate it deterministically, with no further manual step, through
 the exact same evaluate_all/evaluate_iso machinery every built-in vendor
 parser uses (see devices.py).
+
+Ticket 16 addition: confirming a mapping also embeds it into
+TrainingMappingStore (training_mapping_store.py), immediately -- not lazily
+at query time -- so training_suggestions.py's embedding pre-check can find a
+close match for a similar-but-not-identical line the moment this mapping is
+confirmed. That store is additive/read-elsewhere-only from this file's point
+of view: the exact-string matching in build_trained_facts below is
+completely unchanged.
 
 Both stores follow storage.py's DeviceStore pattern: JSON payload,
 Fernet-encrypted with the caller's session data_key, one row per record --
@@ -35,6 +44,7 @@ from pydantic import BaseModel
 
 from .facts import CiscoIosFacts
 from .rules import CIS_CONTROLS
+from .training_mapping_store import TrainingMappingStore
 
 # The "existing taxonomy... used by the fact model" a queued line gets mapped
 # into -- the real ~33 fact_ids, not something the admin can freely invent.
@@ -207,6 +217,7 @@ def build_training_router(
     require_session: Callable[..., bytes],
     queue_store: TrainingQueueStore,
     rule_store: TrainingRuleStore,
+    mapping_store: TrainingMappingStore,
 ) -> APIRouter:
     router = APIRouter()
 
@@ -236,6 +247,12 @@ def build_training_router(
             vendor, line, body.fact_id, body.value, encrypt=Fernet(data_key).encrypt
         )
         queue_store.remove(vendor, line)
+        # Ticket 16: embed immediately, not lazily at query time, so the
+        # embedding pre-check can find this mapping the moment it's
+        # confirmed -- the rule payload above stays Fernet-encrypted, but the
+        # line here is the same plaintext (already-redacted) config line the
+        # admin just confirmed, only ever embedded, never stored raw.
+        mapping_store.add(vendor, line, body.fact_id, body.value)
         return {"ok": True}
 
     return router
