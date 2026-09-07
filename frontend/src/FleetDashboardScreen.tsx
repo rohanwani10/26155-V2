@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { ApiError, getFleetSummary } from "./api";
 import type { FleetSummary } from "./types";
 
+const DEFAULT_FRAMEWORKS = ["CIS", "ISO/IEC 27001", "NIST SP 800-53", "DISA STIG"];
+
 export function FleetDashboardScreen({
   onViewDevice,
   onAuthExpired,
@@ -18,7 +20,8 @@ export function FleetDashboardScreen({
       try {
         const result = await getFleetSummary();
         setSummary(result);
-        setFramework(Object.keys(result.frameworks)[0] ?? null);
+        const keys = Object.keys(result.frameworks);
+        setFramework(keys.includes("CIS") ? "CIS" : keys[0] ?? "CIS");
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
           onAuthExpired();
@@ -27,8 +30,6 @@ export function FleetDashboardScreen({
         setError("Failed to load fleet summary");
       }
     })();
-    // Runs once on mount -- onAuthExpired is a stable callback from App.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const getSeverityBadgeClass = (severity: string) => {
@@ -42,9 +43,21 @@ export function FleetDashboardScreen({
   if (error) return <p role="alert">{error}</p>;
   if (!summary) return <p style={{ padding: 24 }}>Loading fleet summary...</p>;
 
+  const availableFrameworks = Array.from(
+    new Set([...Object.keys(summary.frameworks || {}), ...DEFAULT_FRAMEWORKS])
+  );
+
+  const activeData =
+    framework && summary.frameworks[framework]
+      ? summary.frameworks[framework]
+      : { total_pass_count: 0, total_fail_count: 0, most_common_failures: [] };
+
+  const totalEvaluated = activeData.total_pass_count + activeData.total_fail_count;
+  const passRate = totalEvaluated > 0 ? Math.round((activeData.total_pass_count / totalEvaluated) * 100) : 0;
+
   return (
     <div>
-      <div className="flex-between" style={{ marginBottom: 24, flexWrap: "wrap" }}>
+      <div className="flex-between" style={{ marginBottom: 20, flexWrap: "wrap", gap: 16 }}>
         <div>
           <h1>Fleet dashboard</h1>
           <p style={{ fontSize: "1.1rem" }}>
@@ -55,19 +68,35 @@ export function FleetDashboardScreen({
         </div>
 
         {summary.device_count > 0 && (
-          <div style={{ minWidth: 220 }}>
-            <label htmlFor="fleet-framework-select">Framework</label>
-            <select
-              id="fleet-framework-select"
-              value={framework ?? ""}
-              onChange={(e) => setFramework(e.target.value)}
-            >
-              {Object.keys(summary.frameworks).map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
+          <div>
+            <div style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--text-muted)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              Compliance Standards & Frameworks
+            </div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {availableFrameworks.map((name) => {
+                const active = framework === name;
+                const icon = name.includes("ISO") ? "📋 " : name.includes("CIS") ? "🛡️ " : name.includes("NIST") ? "🏛️ " : "⚙️ ";
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => setFramework(name)}
+                    className={active ? "btn-primary" : "btn-dark"}
+                    style={{
+                      padding: "9px 20px",
+                      borderRadius: "20px",
+                      fontSize: "0.92rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      transition: "all 0.2s ease",
+                      border: active ? "1px solid var(--primary-red)" : "1px solid var(--border-dark)",
+                    }}
+                  >
+                    {icon} {name}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
@@ -86,8 +115,7 @@ export function FleetDashboardScreen({
                 </span>
                 <h2 style={{ marginTop: 0, fontSize: "1.8rem" }}>{framework} Fleet Overview</h2>
                 <p style={{ fontWeight: 600, fontSize: "1.05rem" }}>
-                  {summary.frameworks[framework].total_pass_count} passed /{" "}
-                  {summary.frameworks[framework].total_fail_count} failed across the fleet
+                  {activeData.total_pass_count} passed / {activeData.total_fail_count} failed across the fleet
                 </p>
               </div>
 
@@ -96,14 +124,7 @@ export function FleetDashboardScreen({
                   Compliance Health
                 </span>
                 <h3 style={{ marginTop: 0, fontSize: "1.4rem", color: "#FFF" }}>
-                  {summary.frameworks[framework].total_pass_count + summary.frameworks[framework].total_fail_count > 0
-                    ? Math.round(
-                        (summary.frameworks[framework].total_pass_count /
-                          (summary.frameworks[framework].total_pass_count +
-                            summary.frameworks[framework].total_fail_count)) *
-                          100,
-                      )
-                    : 0}% Compliance Pass Rate
+                  {passRate}% Compliance Pass Rate
                 </h3>
                 <p style={{ color: "var(--text-light-muted)" }}>
                   Monitoring real-time compliance posture across all connected fleet assets.
@@ -116,12 +137,11 @@ export function FleetDashboardScreen({
             <section className="card">
               <h2>{framework} fleet totals</h2>
               <p>
-                {summary.frameworks[framework].total_pass_count} passed /{" "}
-                {summary.frameworks[framework].total_fail_count} failed across the fleet
+                {activeData.total_pass_count} passed / {activeData.total_fail_count} failed across the fleet
               </p>
               <h3>Most common failures</h3>
-              {summary.frameworks[framework].most_common_failures.length === 0 ? (
-                <p>No failures.</p>
+              {activeData.most_common_failures.length === 0 ? (
+                <p>No failures for {framework}.</p>
               ) : (
                 <table>
                   <thead>
@@ -133,7 +153,7 @@ export function FleetDashboardScreen({
                     </tr>
                   </thead>
                   <tbody>
-                    {summary.frameworks[framework].most_common_failures.map((f) => (
+                    {activeData.most_common_failures.map((f) => (
                       <tr key={f.control_id}>
                         <td>
                           <code>{f.control_id}</code>

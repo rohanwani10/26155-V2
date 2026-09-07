@@ -9,6 +9,7 @@ from .chat import build_chat_router
 from .devices import build_devices_router
 from .doc_fetcher import DocFetcher, HttpDocFetcher
 from .llm import LlmClient, OllamaLlmClient
+from .global_chat import build_global_chat_router
 from .network_health import build_network_health_router
 from .training import TrainingQueueStore, TrainingRuleStore, build_training_router
 from .training_mapping_store import TrainingMappingStore
@@ -57,5 +58,6 @@ def create_app(
         )
     )
     app.include_router(build_chat_router(data_dir, require_session, resolved_llm_client))
+    app.include_router(build_global_chat_router(data_dir, require_session, resolved_llm_client))
     app.include_router(build_network_health_router())
     return app

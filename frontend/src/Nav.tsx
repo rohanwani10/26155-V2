@@ -1,4 +1,4 @@
-export type NavTarget = "landing" | "upload" | "bulk-upload" | "fleet" | "training" | "network-health";
+export type NavTarget = "landing" | "upload" | "bulk-upload" | "fleet" | "training" | "network-health" | "global-chat";
 
 import { Sidebar } from "./Sidebar";
 

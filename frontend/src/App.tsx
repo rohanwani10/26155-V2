@@ -7,6 +7,7 @@ import { LandingScreen } from "./LandingScreen";
 import { LoginScreen } from "./LoginScreen";
 import { type NavTarget } from "./Nav";
 import { Sidebar } from "./Sidebar";
+import { GlobalChatScreen } from "./GlobalChatScreen";
 import { NetworkHealthScreen } from "./NetworkHealthScreen";
 import { ResultsScreen } from "./ResultsScreen";
 import { SetupScreen } from "./SetupScreen";
@@ -24,6 +25,7 @@ type Screen =
   | { name: "fleet" }
   | { name: "training" }
   | { name: "network-health" }
+  | { name: "global-chat" }
   | { name: "results"; result: UploadResult }
   | { name: "chat"; deviceId: string };
 
@@ -33,6 +35,7 @@ const NAV_TARGETS: Record<string, NavTarget> = {
   fleet: "fleet",
   training: "training",
   "network-health": "network-health",
+  "global-chat": "global-chat",
 };
 
 export default function App() {
@@ -83,6 +86,9 @@ export default function App() {
       case "network-health":
         setScreen({ name: "network-health" });
         break;
+      case "global-chat":
+        setScreen({ name: "global-chat" });
+        break;
     }
   }
 
@@ -92,10 +98,10 @@ export default function App() {
       .catch(() => goToLogin());
   }
 
-  const withSidebar = (content: React.ReactNode) => (
+  const withSidebar = (content: React.ReactNode, fullBleed = false) => (
     <div className="app-layout">
       <Sidebar current={NAV_TARGETS[screen.name] ?? null} onNavigate={navigate} onLogout={handleLogout} />
-      <main className="app-main-content">{content}</main>
+      <main className={`app-main-content ${fullBleed ? "full-bleed" : ""}`}>{content}</main>
     </div>
   );
 
@@ -132,6 +138,8 @@ export default function App() {
       return withSidebar(<TrainingScreen onAuthExpired={goToLogin} />);
     case "network-health":
       return withSidebar(<NetworkHealthScreen />);
+    case "global-chat":
+      return withSidebar(<GlobalChatScreen onAuthExpired={goToLogin} />, true);
     case "results":
       return withSidebar(
         <ResultsScreen

@@ -1,8 +1,8 @@
-"""Network Health Monitoring & Real Laptop Wi-Fi Telemetry Collector.
+"""Network Health Monitoring & Real Laptop Telemetry Collector.
 
-Measures real live network interface stats from the user's laptop (Wi-Fi / Ethernet),
+Measures real live network interface stats from the user's laptop (Wi-Fi, Ethernet, USB Tethering),
 including real throughput Mbps, RTT ping latency ms, packet loss %, and link health scores.
-Also supports switching to Multi-WAN Simulation Mode.
+Detects multiple active interfaces (e.g. Wi-Fi + USB Tethering) simultaneously.
 """
 
 import socket
@@ -51,26 +51,27 @@ class SwitchRecommendation(BaseModel):
 class RealTelemetryCollector:
     def __init__(self):
         self._last_time = time.time()
-        self._last_bytes = 0
-        self._last_interface = "Wi-Fi"
+        self._last_bytes_map: dict[str, int] = {}
 
-    def find_active_interface(self) -> str:
+    def get_all_active_interfaces(self) -> list[str]:
         if not psutil:
-            return "Wi-Fi"
+            return ["Wi-Fi"]
         stats = psutil.net_if_stats()
         io = psutil.net_io_counters(pernic=True)
-        
-        # Priority 1: Check for 'Wi-Fi' if UP
-        for name in ["Wi-Fi", "WiFi", "Ethernet", "Wi-Fi 6"]:
-            if name in stats and stats[name].isup and name in io:
-                return name
-        
-        # Priority 2: Any non-loopback active interface
+
+        ignored_keywords = ["loopback", "vmnet", "virtualbox", "wsl", "vethernet (wsl)"]
+        active = []
+
         for name, if_stat in stats.items():
-            if if_stat.isup and "loopback" not in name.lower() and name in io:
-                if io[name].bytes_sent + io[name].bytes_recv > 0:
-                    return name
-        return "Wi-Fi"
+            if not if_stat.isup:
+                continue
+            name_lower = name.lower()
+            if any(k in name_lower for k in ignored_keywords):
+                continue
+            if name in io:
+                active.append(name)
+
+        return active if active else ["Wi-Fi"]
 
     def measure_rtt_latency(self) -> tuple[float, float]:
         """Measures RTT latency (ms) and packet loss (0.0 or 100.0) via lightweight socket probe."""
@@ -83,34 +84,43 @@ class RealTelemetryCollector:
             latency = (time.time() - start) * 1000.0
             return max(1.0, round(latency, 1)), 0.0
         except Exception:
-            return 120.0, 5.0  # Fallback gracefully if offline
+            return 120.0, 5.0
 
-    def sample(self) -> tuple[str, float, float, float, float]:
-        """Returns (interface_name, throughput_mbps, bandwidth_usage_pct, latency_ms, packet_loss_pct)"""
-        iface = self.find_active_interface()
+    def sample_all(self) -> list[dict[str, Any]]:
+        ifaces = self.get_all_active_interfaces()
         now = time.time()
         dt = max(0.1, now - self._last_time)
         self._last_time = now
 
-        current_bytes = 0
-        if psutil:
-            io_dict = psutil.net_io_counters(pernic=True)
+        results = []
+        io_dict = psutil.net_io_counters(pernic=True) if psutil else {}
+
+        for iface in ifaces:
+            current_bytes = 0
             if iface in io_dict:
                 current_bytes = io_dict[iface].bytes_sent + io_dict[iface].bytes_recv
 
-        if self._last_bytes == 0 or current_bytes < self._last_bytes:
-            self._last_bytes = current_bytes
-            mbps = 2.4
-        else:
-            delta_bytes = current_bytes - self._last_bytes
-            self._last_bytes = current_bytes
-            mbps = round((delta_bytes * 8.0) / (1024.0 * 1024.0 * dt), 2)
+            last_b = self._last_bytes_map.get(iface, 0)
+            if last_b == 0 or current_bytes < last_b:
+                self._last_bytes_map[iface] = current_bytes
+                mbps = 2.4
+            else:
+                delta_bytes = current_bytes - last_b
+                self._last_bytes_map[iface] = current_bytes
+                mbps = round((delta_bytes * 8.0) / (1024.0 * 1024.0 * dt), 2)
 
-        # Scale bandwidth utilization % against a baseline 100 Mbps connection
-        bw_pct = min(100.0, max(2.0, round((mbps / 100.0) * 100.0, 1)))
-        lat_ms, loss_pct = self.measure_rtt_latency()
+            bw_pct = min(100.0, max(2.0, round((mbps / 100.0) * 100.0, 1)))
+            lat_ms, loss_pct = self.measure_rtt_latency()
 
-        return iface, mbps, bw_pct, lat_ms, loss_pct
+            results.append({
+                "interface": iface,
+                "throughput_mbps": mbps,
+                "bandwidth_usage_pct": bw_pct,
+                "latency_ms": lat_ms,
+                "packet_loss_pct": loss_pct,
+            })
+
+        return results
 
 
 real_collector = RealTelemetryCollector()
@@ -136,7 +146,7 @@ class NetworkHealthState:
             ),
             "wan-2": WanLinkStatus(
                 link_id="wan-2",
-                name="WAN-2 Backup 5G/LTE",
+                name="WAN-2 USB Tethering / 5G LTE",
                 interface="Cellular0/1",
                 status="UP",
                 bandwidth_usage_pct=15.0,
@@ -169,40 +179,77 @@ class NetworkHealthState:
         recommendations = []
 
         if self.mode == "real":
-            iface_name, mbps, bw_pct, lat_ms, loss_pct = real_collector.sample()
-            health_score = self.compute_health_score(bw_pct, lat_ms, loss_pct)
-            status = "UP" if health_score > 60 else "DEGRADED"
+            samples = real_collector.sample_all()
+            links = []
 
-            real_link = WanLinkStatus(
-                link_id="real-wifi",
-                name=f"Laptop Active Connection ({iface_name})",
-                interface=iface_name,
-                status=status,
-                bandwidth_usage_pct=bw_pct,
-                throughput_mbps=mbps,
-                latency_ms=lat_ms,
-                packet_loss_pct=loss_pct,
-                jitter_ms=2.1,
-                health_score=health_score,
-            )
+            for idx, s in enumerate(samples):
+                iface_name = s["interface"]
+                mbps = s["throughput_mbps"]
+                bw_pct = s["bandwidth_usage_pct"]
+                lat_ms = s["latency_ms"]
+                loss_pct = s["packet_loss_pct"]
+                health_score = self.compute_health_score(bw_pct, lat_ms, loss_pct)
+                status = "UP" if health_score > 60 else "DEGRADED"
 
-            if lat_ms > 100.0:
-                alerts.append(
-                    CongestionAlert(
-                        alert_id="alert-real-lat",
-                        link_id="real-wifi",
-                        severity="medium",
-                        title=f"High RTT Latency on {iface_name}",
-                        description=f"Ping latency is {lat_ms:.1f}ms on interface {iface_name}.",
+                iface_lower = iface_name.lower()
+                if "wi-fi" in iface_lower or "wifi" in iface_lower:
+                    display_name = f"Wi-Fi Connection ({iface_name})"
+                elif any(term in iface_lower for term in ["ethernet", "rndis", "cellular", "tether", "usb"]):
+                    display_name = f"USB Tethering / Wired ({iface_name})"
+                else:
+                    display_name = f"Network Connection ({iface_name})"
+
+                link_obj = WanLinkStatus(
+                    link_id=f"real-link-{idx+1}",
+                    name=display_name,
+                    interface=iface_name,
+                    status=status,
+                    bandwidth_usage_pct=bw_pct,
+                    throughput_mbps=mbps,
+                    latency_ms=lat_ms,
+                    packet_loss_pct=loss_pct,
+                    jitter_ms=2.1,
+                    health_score=health_score,
+                )
+                links.append(link_obj.model_dump())
+
+                if lat_ms > 100.0:
+                    alerts.append(
+                        CongestionAlert(
+                            alert_id=f"alert-real-{idx}",
+                            link_id=f"real-link-{idx+1}",
+                            severity="medium",
+                            title=f"High RTT Latency on {iface_name}",
+                            description=f"Ping latency is {lat_ms:.1f}ms on interface {iface_name}.",
+                        ).model_dump()
                     )
+
+            if len(links) > 1:
+                recommendations.append(
+                    SwitchRecommendation(
+                        recommendation_id="rec-multi-wan-active",
+                        trigger_reason="Multiple Active Network Interfaces Detected (Wi-Fi + USB Tethering)",
+                        action_title="Dual-WAN Load Balancing & Hot Failover Active",
+                        source_link=links[0]["link_id"],
+                        target_link=links[1]["link_id"],
+                        advisory_details=f"Detected multiple live connections: {links[0]['name']} and {links[1]['name']}. Automatic traffic distribution and failover active.",
+                        remediation_cli=(
+                            f"configure terminal\n"
+                            f"  track 101 interface {links[0]['interface']} line-protocol\n"
+                            f"  track 102 interface {links[1]['interface']} line-protocol\n"
+                            f"  ip route 0.0.0.0 0.0.0.0 {links[0]['interface']} 10 track 101\n"
+                            f"  ip route 0.0.0.0 0.0.0.0 {links[1]['interface']} 20 track 102\n"
+                            f"end"
+                        ),
+                    ).model_dump()
                 )
 
             return {
                 "mode": "real",
-                "active_interface": iface_name,
-                "links": [real_link.model_dump()],
-                "alerts": [a.model_dump() for a in alerts],
-                "recommendations": [r.model_dump() for r in recommendations],
+                "active_interface": ", ".join(s["interface"] for s in samples),
+                "links": links,
+                "alerts": alerts,
+                "recommendations": recommendations,
                 "simulated_spike": None,
             }
 

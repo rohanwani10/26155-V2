@@ -317,11 +317,12 @@ def build_devices_router(
     def fleet_summary(data_key: bytes = Depends(require_session)) -> dict[str, Any]:
         records = store.list_all(decrypt=Fernet(data_key).decrypt)
 
+        framework_names = ["CIS", "ISO/IEC 27001", "NIST SP 800-53", "DISA STIG"]
         devices: list[dict[str, Any]] = []
-        pass_totals = {name: 0 for name in FRAMEWORK_NAMES}
-        fail_totals = {name: 0 for name in FRAMEWORK_NAMES}
+        pass_totals = {name: 0 for name in framework_names}
+        fail_totals = {name: 0 for name in framework_names}
         control_fail_counts: dict[str, dict[str, dict[str, Any]]] = {
-            name: {} for name in FRAMEWORK_NAMES
+            name: {} for name in framework_names
         }
 
         for device_id, record in records:
@@ -352,6 +353,32 @@ def build_devices_router(
                     )
                     entry["fail_count"] += 1
 
+            # ISO/IEC 27001 Evidence Aggregation
+            iso_list = record.get("iso_evidence", [])
+            iso_pass = 0
+            iso_fail = 0
+            for item in iso_list:
+                for fe in item.get("evidence", []):
+                    if fe.get("satisfied"):
+                        iso_pass += 1
+                    else:
+                        iso_fail += 1
+                        entry = control_fail_counts["ISO/IEC 27001"].setdefault(
+                            item["control_id"],
+                            {
+                                "control_id": item["control_id"],
+                                "title": item["title"],
+                                "severity": "medium",
+                                "fail_count": 0,
+                            },
+                        )
+                        entry["fail_count"] += 1
+
+            device_pass_counts["ISO/IEC 27001"] = iso_pass
+            device_fail_counts["ISO/IEC 27001"] = iso_fail
+            pass_totals["ISO/IEC 27001"] += iso_pass
+            fail_totals["ISO/IEC 27001"] += iso_fail
+
             devices.append(
                 {
                     "device_id": device_id,
@@ -371,7 +398,7 @@ def build_devices_router(
                     reverse=True,
                 ),
             }
-            for framework in FRAMEWORK_NAMES
+            for framework in framework_names
         }
 
         return {

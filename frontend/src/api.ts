@@ -172,3 +172,16 @@ export function simulateNetworkEvent(link_id: string | null) {
   });
 }
 
+export function sendGlobalChatMessage(question: string) {
+  return request<ChatExchange>("/api/global-chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question }),
+  });
+}
+
+export function getGlobalChatHistory() {
+  return request<ChatHistoryResponse>("/api/global-chat");
+}
+
+
